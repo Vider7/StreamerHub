@@ -183,12 +183,7 @@ export default function App() {
         <div className="overlay" role="alert" aria-label="installing update">
           <div className="modal">
             <div className="modal-head"><span className="modal-title">installing update</span></div>
-            <div className="modal-body">
-              <p className="hint">hang on, the new version is swapping in and the app will restart. music resumes on its own.</p>
-              <div className="modal-actions">
-                <button className="btn ghost" onClick={() => { localStorage.removeItem("sh.updating"); window.location.reload(); }}>reload dashboard</button>
-              </div>
-            </div>
+            <div className="modal-body"><p className="hint">hang on, the new version is swapping in and the app will restart. music resumes on its own.</p></div>
           </div>
         </div>
       )}
