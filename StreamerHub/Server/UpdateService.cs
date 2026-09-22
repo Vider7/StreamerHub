@@ -182,6 +182,7 @@ public sealed class UpdateService : IDisposable
     {
         var version = _readyVersion;
         if (version.Length == 0) return 0;
+        _readyVersion = "";
         var stage = Path.Combine(AppPaths.BaseDir, "~updates", version);
         var exePath = Path.Combine(stage, "StreamerHub.exe");
         if (!File.Exists(exePath))
