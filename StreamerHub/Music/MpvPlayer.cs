@@ -161,6 +161,7 @@ public sealed class MpvPlayer : IDisposable
         psi.ArgumentList.Add("--no-config");
         psi.ArgumentList.Add("--vo=null");
         psi.ArgumentList.Add("--audio-display=no");
+        psi.ArgumentList.Add("--input-media-keys=no");
         psi.ArgumentList.Add("--volume=" + _volume);
         if (_device.Length > 0) psi.ArgumentList.Add("--audio-device=" + _device);
         psi.ArgumentList.Add("--input-ipc-server=" + @"\\.\pipe\" + IpcName);

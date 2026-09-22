@@ -16,7 +16,7 @@ Reading this as: a live companion dashboard for a musician who streams, dark and
 - RHYTHM 2: three columns, predictable placement, with deliberate breaks: the LIVE viewers tile is the filled focal tile, and LIVE + NOW PLAYING carry the orange live-dot gesture. Uniform where the streamer re-finds numbers, accented where the eye should go.
 - Panels are a fixed rack; the streamer drags a panel by its title bar to reorder chat/stats/music any way, persisted in Config.json. Free drag on a three-slot grid keeps the rack predictable while letting the streamer dock what they watch most to the left.
 - The playback state never lies: with nothing loaded the player reads STOPPED, paused reads PAUSED, and errors advance the queue. Sound never comes from the page: a background mpv subprocess owns the audio so OBS captures it as its own app, and the dashboard is a remote control (R-04).
-- The transport is previous / play-pause / skip; scrubbing is done on the timeline bar (drag or arrow keys), never with a back-10 button (R-26).
+- The transport is previous / play-pause / skip, on screen and on the keyboard media keys (mpv leaves media keys alone so every press flows through the queue); scrubbing is done on the timeline bar (drag or arrow keys), never with a back-10 button (R-26).
 - Album art is decorative: never draggable or selectable, with a flat ♪ fallback tile (R-27).
 - A slim 10-band EQ and a loudness switch sit under the player, applied through mpv's audio filters and saved in Config.json.
 - MOTION 1: static except cursor/hover state changes. Drag uses the native drag glow only on hover and a drop-target outline.

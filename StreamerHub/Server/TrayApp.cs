@@ -8,9 +8,9 @@ public static class TrayApp
 {
     static NotifyIcon? _tray;
 
-    public static void Start(string url, Action onQuit, UpdateService updater)
+    public static void Start(string url, Action onQuit, UpdateService updater, Action onPlayPause, Action onNext, Action onPrev)
     {
-        var t = new Thread(() => Run(url, onQuit, updater))
+        var t = new Thread(() => Run(url, onQuit, updater, onPlayPause, onNext, onPrev))
         {
             IsBackground = true,
         };
@@ -18,7 +18,7 @@ public static class TrayApp
         t.Start();
     }
 
-    static void Run(string url, Action onQuit, UpdateService updater)
+    static void Run(string url, Action onQuit, UpdateService updater, Action onPlayPause, Action onNext, Action onPrev)
     {
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
@@ -60,6 +60,7 @@ public static class TrayApp
             Opacity = 0,
             WindowState = FormWindowState.Minimized,
         };
+        using var mediaKeys = new MediaKeys(onPlayPause, onNext, onPrev);
         Application.Run(host);
     }
 

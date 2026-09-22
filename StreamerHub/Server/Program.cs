@@ -249,7 +249,10 @@ internal static class Program
             _ = app.StopAsync(CancellationToken.None);
         });
         updater.QuitRequested += quitApp;
-        TrayApp.Start(url, quitApp, updater);
+        TrayApp.Start(url, quitApp, updater,
+            onPlayPause: () => { if (_music?.NowPlaying != null && _mpv is { Available: true }) _mpv.SetPause(!_mpv.Paused); },
+            onNext: () => _music?.Skip(),
+            onPrev: () => _music?.Prev());
 
         await app.RunAsync();
         ShutdownServices();
