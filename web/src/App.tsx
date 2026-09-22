@@ -150,7 +150,7 @@ export default function App() {
               send({ type: "logs" });
             }}
           >
-            {"\u2699\uFE0E"}
+            <i className="fa-solid fa-gear" aria-hidden="true" />
           </button>
         </div>
       </footer>
@@ -235,7 +235,7 @@ const PanelChatM = React.memo(function PanelChat({ chat, activity, strip, send }
   return (
     <div className="panel-inner">
       <div className="strip" {...strip}>
-        <span className="grip" aria-hidden="true">&#11047;</span>
+        <span className="grip" aria-hidden="true"><i className="fa-solid fa-grip-vertical" aria-hidden="true" /></span>
         <span className="strip-title">{"chat"}</span>
         <span className="strip-meta">{chat.length} shown</span>
         <ClearChat send={send} />
@@ -361,7 +361,7 @@ function ChatRow({ e }: { e: any }) {
         <>
           <span className={"tag " + (e.tag === "TW" ? "tw" : "tt")}>{tag}</span>
           <span className="user" style={{ color: e.color }}>
-            {(e.isMod || e.isBroad) && <span className="modmark" aria-hidden="true">&#9664;&#65039;</span>}
+            {(e.isMod || e.isBroad) && <i className="fa-solid fa-shield-halved modmark" aria-hidden="true" />}
             {e.user}
           </span>
           <span className="msg">{e.msg}</span>
@@ -384,7 +384,7 @@ const PanelStatsM = React.memo(function PanelStats({ stats, twitchViewers, strip
   return (
     <div className="panel-inner">
       <div className="strip" {...strip}>
-        <span className="grip" aria-hidden="true">&#11047;</span>
+        <span className="grip" aria-hidden="true"><i className="fa-solid fa-grip-vertical" aria-hidden="true" /></span>
         <span className="strip-title">{"stats"}</span>
         <span className="strip-meta">{stats ? fmt(stats.total) + " messages" : ""}</span>
       </div>
@@ -411,7 +411,7 @@ function PanelMusic({ music, pos, send, appCommand, strip, results }: { music: M
   return (
     <div className="panel-inner">
       <div className="strip" {...strip}>
-        <span className="grip" aria-hidden="true">&#11047;</span>
+        <span className="grip" aria-hidden="true"><i className="fa-solid fa-grip-vertical" aria-hidden="true" /></span>
         <span className="strip-title">{"music"}</span>
         <span className="strip-meta">{music ? music.queue.length + " queued" : ""}</span>
         <button
@@ -584,21 +584,21 @@ function NowPlaying({ music, pos, send }: { music: Music | null; pos: { position
           {now && <div className="progress-handle" style={{ left: pct + "%" }} />}
         </div>
         <div className="transport">
-          <IconBtn title="previous song" onClick={() => send({ type: "prev" })}>{"\u23EE\uFE0E"}</IconBtn>
+          <IconBtn title="previous song" onClick={() => send({ type: "prev" })}><i className="fa-solid fa-backward-step" aria-hidden="true" /></IconBtn>
           <button className="play" onClick={() => send({ type: "pause", paused: playingRef.current })} aria-label="toggle play pause">
-            {now && !playing ? "\u23F5\uFE0E" : "\u23F8\uFE0E"}
+            {now && !playing ? <i className="fa-solid fa-play" aria-hidden="true" /> : <i className="fa-solid fa-pause" aria-hidden="true" />}
           </button>
           {now && (
             <IconBtn className={"like" + (liked ? " liked" : "")} title={liked ? "undo like" : "like this song"} onClick={likeCurrent}>
-              {liked ? "\u2665" : "\u2661"}
+              <i className={liked ? "fa-solid fa-heart" : "fa-regular fa-heart"} aria-hidden="true" />
             </IconBtn>
           )}
           {now && (
             <IconBtn className="block" title="block this song - it will never play again" onClick={() => send({ type: "block", id: now.id, title: now.title, channel: now.channel, duration: now.duration })}>
-              {"\u2297"}
+              <i className="fa-solid fa-ban" aria-hidden="true" />
             </IconBtn>
           )}
-          <IconBtn title="skip to next" onClick={() => send({ type: "skip" })}>{"\u23ED\uFE0E"}</IconBtn>
+          <IconBtn title="skip to next" onClick={() => send({ type: "skip" })}><i className="fa-solid fa-forward-step" aria-hidden="true" /></IconBtn>
         </div>
         <div className="volrow">
           <span className="vol-label">vol</span>
@@ -757,7 +757,7 @@ function TrackThumb({ id, className, alt }: { id: string; className?: string; al
   }, [id]);
   if (!id || !ok) {
     return (
-      <div className={"noart " + (className ?? "")} aria-hidden="true">&#9835;</div>
+      <div className={"noart " + (className ?? "")} aria-hidden="true"><i className="fa-solid fa-music" aria-hidden="true" /></div>
     );
   }
   return (
@@ -776,7 +776,7 @@ const QueueListM = React.memo(function QueueList({ music, send }: { music: Music
           <span className="qtitle" title={t.title}>{t.title}</span>
           <span className="qby">{t.by}</span>
           <span className="qdur mono">{t.durationLabel}</span>
-          <button className="qx" onClick={() => send({ type: "remove", index: i })} aria-label="remove from queue" title="remove from queue">{"×"}</button>
+          <button className="qx" onClick={() => send({ type: "remove", index: i })} aria-label="remove from queue" title="remove from queue"><i className="fa-solid fa-xmark" aria-hidden="true" /></button>
         </div>
       ))}
       {q.length === 0 && <div className="empty">queue is empty, request songs in chat</div>}
@@ -832,7 +832,7 @@ const BlockedListM = React.memo(function BlockedList({ blocked, send }: { blocke
           <span className="qtitle" title={t.title}>{t.title}</span>
           <span className="qby">{t.by}</span>
           <span className="qdur mono">{t.durationLabel}</span>
-          <button className="qx" onClick={() => send({ type: "unblock", id: t.id })} aria-label="unblock song" title="unblock - it can play again">{"×"}</button>
+          <button className="qx" onClick={() => send({ type: "unblock", id: t.id })} aria-label="unblock song" title="unblock - it can play again"><i className="fa-solid fa-xmark" aria-hidden="true" /></button>
         </div>
       ))}
       {blocked.length === 0 && <div className="empty">no blocked songs</div>}
@@ -972,7 +972,7 @@ function SetupWizard({ account, app, send, onSkip }: { account: AccountInfo | nu
       <div className="modal">
         <div className="modal-head">
           <span className="modal-title">first-time setup</span>
-          <button className="modal-close" onClick={onSkip} aria-label="skip setup for now">{"×"}</button>
+          <button className="modal-close" onClick={onSkip} aria-label="skip setup for now"><i className="fa-solid fa-xmark" aria-hidden="true" /></button>
         </div>
         <div className="modal-body">
           <p className="hint">
@@ -1060,7 +1060,7 @@ function SettingsModal({ account, app, logs, logError, send, theme, onTheme, onC
       <div className="modal">
         <div className="modal-head">
           <span className="modal-title">settings</span>
-          <button className="modal-close" onClick={onClose} aria-label="close settings">{"×"}</button>
+          <button className="modal-close" onClick={onClose} aria-label="close settings"><i className="fa-solid fa-xmark" aria-hidden="true" /></button>
         </div>
         <div className="tabs" role="tablist">
           {(["themes", "account", "logs"] as const).map((t) => (

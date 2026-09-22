@@ -91,6 +91,8 @@ public sealed class AppConfig
     public string Layout { get; set; } = "CSM";
     public int Port { get; set; } = 51324;
     public bool AutoOpenBrowser { get; set; } = true;
+    // Set after the first-run tab opens, so restarts stay tab-free.
+    public bool BrowserOpened { get; set; }
     public TwitchConfig Twitch { get; set; } = new();
     public TikTokConfig TikTok { get; set; } = new();
     public MusicConfig Music { get; set; } = new();

@@ -23,7 +23,7 @@ Everything your stream needs in one browser tab: chat from **Twitch** and **TikT
 
 | Feature | Description |
 |---|---|
-| **Both chats, one column** | Twitch and TikTok newest-on-top, with platform badges and a star for mods |
+| **Both chats, one column** | Twitch and TikTok newest-on-top, with platform badges and a shield for mods |
 | **Quiet bot** | Only song requests appear in the feed. Nothing is ever written to your Twitch or TikTok chat |
 | **Clear chat** | Hold the button (it fills as you hold) to wipe the on-screen feed |
 
@@ -108,7 +108,7 @@ Viewers request songs with `!sr` plus a song name (links are rejected, names onl
   "AppName": "StreamerHub",
   "Layout": "CSM",                  // panel order: C = chat, S = stats, M = music
   "Port": 51324,                    // the number used in the page address
-  "AutoOpenBrowser": true,          // true = the page opens when the app starts
+  "AutoOpenBrowser": true,          // true = the page opens once on first run (tray icon reopens it later)
   "Twitch": {
     "Channel": "your-channel-name", // your Twitch channel name
     "ClientId": "",                 // optional: for Twitch viewer count, see below

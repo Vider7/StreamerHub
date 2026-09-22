@@ -235,10 +235,12 @@ internal static class Program
         updater.Start();
 
         var url = "http://127.0.0.1:" + port;
-        if (_cfg.AutoOpenBrowser && Environment.GetEnvironmentVariable("STREAMERHUB_NO_BROWSER") != "1")
+        if (_cfg.AutoOpenBrowser && !_cfg.BrowserOpened && Environment.GetEnvironmentVariable("STREAMERHUB_NO_BROWSER") != "1")
         {
             Log.Info("opening browser at " + url);
             OpenBrowser(url);
+            _cfg.BrowserOpened = true;
+            _cfg.Save();
         }
         Log.Info("listening on " + url);
 
