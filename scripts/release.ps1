@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
-    [string]$ConfigFile = 'StreamerHub\Config.json'
+    [string]$ConfigFile = 'StreamerHub\Config.json',
+    [string]$Repo = 'Vider7/StreamerHub'
 )
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
@@ -51,7 +52,7 @@ $sha = (Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash.ToLowerInvariant(
 $manifest = Join-Path $root 'version.json'
 $feed = @{
     version = $version
-    url     = "https://github.com/Vider7/StreamerHub/releases/download/v$version/StreamerHub-win-x64.zip"
+    url     = "https://github.com/$Repo/releases/download/v$version/StreamerHub-win-x64.zip"
     sha256  = $sha
 } | ConvertTo-Json
 [System.IO.File]::WriteAllText($manifest, $feed, [System.Text.UTF8Encoding]::new($false))
@@ -64,8 +65,8 @@ Write-Host "SHA256:  $sha"
 Write-Host "Feed:    $manifest"
 Write-Host ''
 Write-Host 'To ship this release (GitHub):' -ForegroundColor Cyan
-Write-Host '  1. Create a GitHub Release tagged v$version (use your shell to expand):'
-Write-Host "     gh release create v$version $zip --title v$version"
+Write-Host "  1. Create a GitHub Release tagged v$version in $Repo" -ForegroundColor White
+Write-Host "     gh release create v$version $zip --title v$version --repo $Repo"
 Write-Host '     (or web UI: Releases > Draft a new release, attach the zip).'
 Write-Host '  2. Commit the updated version.json to main (it now points at the release asset).'
 Write-Host 'Their app checks the feed on startup and every few hours, and shows an "update" button.'
