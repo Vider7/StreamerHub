@@ -56,6 +56,8 @@ public sealed class MpvPlayer : IDisposable
     int _restartCount;
     DateTime _lastRestartUtc = DateTime.MinValue;
     bool _prevPause;
+    bool _volumeWarned;
+    bool _pauseWarned;
 
     // pending work for the single IPC worker thread
     volatile string? _pendingUrl;
@@ -454,7 +456,6 @@ public sealed class MpvPlayer : IDisposable
                     else
                     {
                         _fastFailTries++;
-                        Log.Warn("unexplained stop right after load, retrying (" + _fastFailTries + "/" + FastFailRetries + ") reason=" + reason + " endedFile=" + (endedFile ?? "null") + " lastUrl=" + (_lastUrl ?? "null"));
                         Retrying?.Invoke();
                     }
                     return true;
@@ -474,7 +475,6 @@ public sealed class MpvPlayer : IDisposable
                 {
                     if (Duration > 0 && Position < Duration - 5)
                     {
-                        Log.Warn("stream cut short (eof at " + Position.ToString("0.0") + " of " + Duration.ToString("0.0") + "s), retrying");
                         FastFailFailure();
                     }
                     else
@@ -524,10 +524,11 @@ public sealed class MpvPlayer : IDisposable
                         Command("set_property", "volume", (double)vol);
                         _volume = vol;
                         _pendingVolume = null;
+                        _volumeWarned = false;
                     }
                     catch
                     {
-                        Log.Warn("volume set failed (retrying)");
+                        if (!_volumeWarned) { _volumeWarned = true; Log.Warn("volume commands failing, will keep retrying"); }
                     }
                 }
                 if (_pauseRequested)
@@ -536,10 +537,11 @@ public sealed class MpvPlayer : IDisposable
                     {
                         Command("set_property", "pause", _pendingPause);
                         _pauseRequested = false;
+                        _pauseWarned = false;
                     }
                     catch (Exception ex)
                     {
-                        Log.Warn("pause set failed (retrying): " + ex.Message);
+                        if (!_pauseWarned) { _pauseWarned = true; Log.Warn("pause commands failing, will keep retrying: " + ex.Message); }
                     }
                 }
                 if (_pendingStop)
@@ -619,7 +621,6 @@ public sealed class MpvPlayer : IDisposable
                         else
                         {
                             _fastFailTries++;
-                            Log.Warn("no progress after load, retrying (" + _fastFailTries + "/" + FastFailRetries + ")");
                             Retrying?.Invoke();
                         }
                     }
@@ -635,7 +636,6 @@ public sealed class MpvPlayer : IDisposable
                         else
                         {
                             _fastFailTries++;
-                            Log.Warn(what + ", retrying fresh (" + _fastFailTries + "/" + FastFailRetries + ")");
                             Retrying?.Invoke();
                         }
                     }

@@ -178,7 +178,6 @@ internal static class Program
             var id = _mpv?.CurrentId;
             if (id == null || _resolvingId == id) return;
             if (_mpv?.CurrentId != id) return;
-            Log.Warn("retrying with a fresh proxy stream for " + id);
             _resumeSeek = 0;
             _resumePlaying = true;
             _mpv.RetryPlay(StreamUrl(id));
