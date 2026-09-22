@@ -211,6 +211,7 @@ public sealed class WebSocketHub
                     if (action == "check") Updater.CheckNow();
                     else if (action == "apply")
                     {
+                        Broadcast(new { type = "notice", text = "installing update v" + Updater.LatestVersion + ", restarting..." });
                         var code = Updater.ApplyNow();
                         if (code == 1) Broadcast(new { type = "notice", text = "update could not be applied, check logs/app.log" });
                     }

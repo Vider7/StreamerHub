@@ -254,6 +254,9 @@ internal static class Program
 
         await app.RunAsync();
         ShutdownServices();
+        // Force the process out: lingering service threads can otherwise keep it
+        // alive for a long time, holding the exe locked and stalling restarts.
+        Environment.Exit(0);
         return 0;
     }
 

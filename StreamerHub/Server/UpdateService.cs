@@ -220,8 +220,8 @@ public sealed class UpdateService : IDisposable
         var version = args.Length > i + 2 ? args[i + 2] : "";
 
         try { Log.Init(appDir); } catch { }
-        Log.Info("updater apply: waiting for the old instance to exit");
-        Thread.Sleep(5000);
+
+        WaitForOldInstancesExit(appDir);
 
         var stage = Path.Combine(appDir, "~updates", version);
         if (!Directory.Exists(stage))
@@ -230,8 +230,17 @@ public sealed class UpdateService : IDisposable
             return 2;
         }
 
+        // Swap the exe first: if it is still locked, abort before touching anything
+        // else, so a failed update leaves the old build fully intact (no half-swapped
+        // build, and version.txt keeps reporting the old version so it retries).
+        if (!TryCopyAtomic(Path.Combine(stage, "StreamerHub.exe"), Path.Combine(appDir, "StreamerHub.exe")))
+        {
+            Log.Warn("updater apply: exe still locked, aborting - old build untouched");
+            return 3;
+        }
+
         var failed = CopyTree(stage, appDir);
-        if (failed > 0) Log.Warn("updater apply: " + failed + " file(s) could not be replaced; old build kept");
+        if (failed > 0) Log.Warn("updater apply: " + failed + " file(s) could not be replaced");
 
         var exe = Path.Combine(appDir, "StreamerHub.exe");
         if (File.Exists(exe))
@@ -249,10 +258,49 @@ public sealed class UpdateService : IDisposable
         return failed > 0 ? 3 : 0;
     }
 
+    static void WaitForOldInstancesExit(string appDir)
+    {
+        List<Process> Siblings()
+        {
+            var found = new List<Process>();
+            var self = Process.GetCurrentProcess().Id;
+            foreach (var p in Process.GetProcessesByName("StreamerHub"))
+            {
+                if (p.Id == self) continue;
+                try
+                {
+                    var dir = Path.GetDirectoryName(p.MainModule?.FileName ?? "");
+                    if (dir != null && dir.Equals(appDir, StringComparison.OrdinalIgnoreCase)) found.Add(p);
+                    else p.Dispose();
+                }
+                catch { try { p.Dispose(); } catch { } }
+            }
+            return found;
+        }
+
+        var deadline = DateTime.UtcNow.AddSeconds(45);
+        while (DateTime.UtcNow < deadline)
+        {
+            var live = Siblings();
+            if (live.Count == 0) { Log.Info("updater apply: old instance exited"); return; }
+            foreach (var p in live) p.Dispose();
+            Thread.Sleep(500);
+        }
+        foreach (var p in Siblings())
+        {
+            try { Log.Warn("updater apply: old instance did not exit, killing pid " + p.Id); p.Kill(); }
+            catch (Exception ex) { Log.Warn("updater apply: kill failed: " + ex.Message); }
+            finally { try { p.Dispose(); } catch { } }
+        }
+        Thread.Sleep(2000);
+    }
+
     static int CopyTree(string source, string destRoot)
     {
         var failed = 0;
-        foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
+        var files = Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories).ToList();
+        files.Sort((a, b) => RankFile(source, a).CompareTo(RankFile(source, b)));
+        foreach (var file in files)
         {
             var rel = Path.GetRelativePath(source, file);
             if (IsExcluded(rel)) continue;
@@ -273,12 +321,19 @@ public sealed class UpdateService : IDisposable
     static bool IsExcluded(string rel)
     {
         var sep = Path.DirectorySeparatorChar;
+        if (rel.Equals("StreamerHub.exe", StringComparison.OrdinalIgnoreCase)) return true; // swapped first by the caller
         if (rel.Equals("Config.json", StringComparison.OrdinalIgnoreCase)) return true;
         if (rel.Equals("cookies.txt", StringComparison.OrdinalIgnoreCase)) return true;
         if (rel.Equals("HOW TO RUN.txt", StringComparison.OrdinalIgnoreCase)) return true;
         if (rel.StartsWith("logs" + sep, StringComparison.OrdinalIgnoreCase)) return true;
         if (rel.StartsWith("~updates" + sep, StringComparison.OrdinalIgnoreCase)) return true;
         return false;
+    }
+
+    static int RankFile(string source, string file)
+    {
+        var rel = Path.GetRelativePath(source, file);
+        return rel.Equals("version.txt", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
     }
 
     static bool TryCopyAtomic(string src, string dest)

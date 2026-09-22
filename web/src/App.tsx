@@ -1083,10 +1083,6 @@ function SettingsModal({ account, app, logs, logError, send, theme, onTheme, onC
           {tab === "account" && (
             <>
               <div className="formrow">
-                <span className="field-label">update test</span>
-                <div className="text">testing update, if you see this v1.6.5 installed</div>
-              </div>
-              <div className="formrow">
                 <label className="field-label" htmlFor="st-tw">twitch channel <span className="req">*</span></label>
                 <input id="st-tw" className="text" value={tw} onChange={(e) => setTw(e.target.value)} placeholder="yourchannel" />
               </div>
