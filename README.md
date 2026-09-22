@@ -39,7 +39,8 @@ Viewers, likes, gifts (with diamond value), follows, shares, joins. They update 
 | **Background player** | Music runs in mpv, its own app with its own sound — capture it in OBS as a normal channel |
 | **Keeps playing** | Close the tab or the browser and it keeps going; reopen and it shows exactly where it is |
 | **Full transport** | Play, pause, previous, skip, volume, scrub bar (drag or arrow keys nudge 5s) |
-| **EQ & loudness** | Slim 10-band equalizer plus a loudness switch for a fuller broadcast sound, both saved |
+| **EQ & loudness** | Slim 10-band equalizer (plus Flat / Bass+ / Vocal / Club presets) and a loudness switch, both saved |
+| **Library lists** | History, liked, and blocked songs live under the player |
 | **Radio fallback** | When the queue runs out, one similar song plays. Turn "radio off" to stop instead |
 
 ### Layout
@@ -51,26 +52,36 @@ Drag the chat, stats, and music panels by their title bars into any order. It re
 ## Requirements
 
 - Windows 10 / 11
-- Internet (first install, plus chat feeds / YouTube / audio at runtime)
-- OBS (optional, for capturing the music channel)
+- Internet (chat feeds, YouTube search, and audio run online; everything else stays local)
+- OBS (optional, for capturing the music channel and showing the queue overlay)
 
 ---
 
-## Install
+## Get StreamerHub
 
-1. Double-click **`install.bat`** (needs internet once).
-   - Builds the app into `%LOCALAPPDATA%\StreamerHub`
-   - Fetches the music helpers (`yt-dlp`, mpv) into `tools\`
-   - Adds a **Streamer Hub** shortcut to your Start Menu
-   - Your settings are never overwritten
-2. Open **Streamer Hub** from the Start Menu. The dashboard opens in your browser; the app sits in the system tray.
-3. Point it at your accounts, just once:
-   - Open `Config.json` in the app folder (next to `StreamerHub.exe`)
-   - Set `Twitch.Channel` to your Twitch name and `TikTok.Username` to your TikTok name (no `@`)
-   - Save, then reopen the app
-4. The lights in the top bar show when Twitch and TikTok connect.
+### Download the release (recommended)
 
-To update later, run **`install.bat`** again. It refreshes the app and keeps your settings.
+1. Grab the newest zip from the [releases page](https://github.com/Vider7/StreamerHub/releases) and unzip it anywhere.
+2. Run **`StreamerHub.exe`**. The dashboard opens in your browser; the app sits in the system tray.
+3. A first-time setup walks you through pointing it at your accounts: your Twitch channel and TikTok username (no `@`). The lights in the top bar show when they connect.
+
+### Build it yourself
+
+Needs the .NET SDK and Node.js. Clone the repo and run **`build.bat`** — output is `dist\StreamerHub.exe`. (Developers: `install.bat` installs it to `%LOCALAPPDATA%\StreamerHub` with a Start Menu shortcut instead.)
+
+---
+
+## Updates
+
+The app checks for updates on its own and shows a chip in the top bar when one is ready:
+
+| Action | How |
+|---|---|
+| Check now | Click the version chip → check |
+| Install | Click the **update** button — it downloads, verifies, swaps itself in, and restarts. Music resumes where it was |
+| After updating | The dashboard tab reloads itself into the new version |
+
+Your settings and lists survive every update. If anything ever goes truly sideways, redownload the zip and drop your old `Config.json` next to the new exe so you keep your channel names.
 
 ---
 
@@ -94,14 +105,19 @@ Viewers request songs with `!sr` plus a song name (links are rejected, names onl
 | Action | How |
 |---|---|
 | Rearrange | Drag panels by their title bars (chat / stats / music) |
+| Change theme | Gear icon → themes (amber, rose, mint, violet, blue, rgb) |
 | Open it again | Double-click the tray icon |
 | Stop it | Right-click the tray icon → **Quit** |
+
+### Stream overlay
+
+Show the live queue on stream: add a browser source in OBS pointing at `http://127.0.0.1:51324/overlay.html`. Transparent background, current song plus what's queued.
 
 ---
 
 ## Settings
 
-`Config.json` lives next to the app. Change it, save, reopen the app. Done.
+`Config.json` lives next to the app (the setup wizard and the settings gear both write it too). Change it by hand, save, reopen the app. Done.
 
 ```
 {
@@ -122,6 +138,8 @@ Viewers request songs with `!sr` plus a song name (links are rejected, names onl
   },
   "Music": {
     "Command": "!sr",               // the word in chat that requests a song
+    "YtDlpPath": "",                // leave empty to use the yt-dlp in tools
+    "YtDlpCookiesFile": "",         // optional: full path to a cookies.txt if YouTube blocks searches
     "DefaultVolume": 25,            // how loud new songs start
     "MaxTrackMinutes": 10,          // longest song a request can be
     "MaxQueueLength": 20,           // song line limit
@@ -129,10 +147,15 @@ Viewers request songs with `!sr` plus a song name (links are rejected, names onl
     "RateLimitSeconds": 15,         // wait between requests per viewer
     "GlobalCooldownSeconds": 5,     // pause between requests from chat
     "AutoNextRadio": true,          // true = a similar song plays when the queue runs out
-    "MpvPath": "",                  // leave empty to use the mpv that install.bat puts in tools
+    "MpvPath": "",                  // leave empty to use the mpv in tools
     "AudioDevice": "",              // empty = your default sound output; set one for a specific device
     "Equalizer": [0,0,0,0,0,0,0,0,0,0], // 10-band EQ, each band -12 to +12
     "Loudness": false               // true = smooth out the sound for streaming
+  },
+  "Updater": {
+    "Enabled": true,                // the built-in update checker
+    "Feed": "https://raw.githubusercontent.com/Vider7/StreamerHub/main/version.json",
+    "AutoCheckHours": 2.0           // how often to check, in hours
   }
 }
 ```
@@ -156,7 +179,8 @@ No window to capture: the player has no UI. If Application Audio Capture is miss
 | Symptom | Fix |
 |---|---|
 | Not sure what's happening | Read the status text at the bottom of the page and the lights in the top bar |
-| No music | Make sure `mpv.exe` is in `tools\mpv` next to the app (`install.bat` puts it there), then play a song |
+| No music | Make sure `mpv.exe` is in `tools\mpv` next to the app, then play a song |
+| Check says up to date right after a release | Wait a few minutes and check again — the update feed takes a moment to refresh |
 | Need help from a friend | Send them `logs\app.log` from the app folder — usually everything they need |
 
 ---
