@@ -204,6 +204,11 @@ export function useHub() {
       switch (msg.type) {
         case "init": {
           const i = msg as Record<string, unknown>;
+          if (localStorage.getItem("sh.updating") === "1") {
+            localStorage.removeItem("sh.updating");
+            window.location.reload();
+            break;
+          }
           localStorage.removeItem("sh.updating");
           setState({
             connected: true,
