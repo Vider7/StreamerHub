@@ -179,6 +179,14 @@ export default function App() {
           onClose={() => setSettingsOpen(false)}
         />
       )}
+      {state.applying && (
+        <div className="overlay" role="alert" aria-label="installing update">
+          <div className="modal">
+            <div className="modal-head"><span className="modal-title">installing update</span></div>
+            <div className="modal-body"><p className="hint">hang on, the new version is swapping in and the app will restart. music resumes on its own.</p></div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

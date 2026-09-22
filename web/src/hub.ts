@@ -106,6 +106,7 @@ export type HubState = {
   music: Music | null;
   pos: { position: number; playing: boolean };
   notice: string;
+  applying: boolean;
   results: TrackResultShape[];
   layout: string;
   update: UpdateInfo;
@@ -126,6 +127,7 @@ const emptyState: HubState = {
   music: null,
   pos: { position: 0, playing: false },
   notice: "",
+  applying: false,
   results: [],
   layout: "CSM",
   update: { current: "", status: "idle", latest: "", ready: false },
@@ -149,7 +151,10 @@ function nowTime() {
 
 export function useHub() {
   const wsRef = useRef<WebSocket | null>(null);
-  const [state, setState] = useState<HubState>(emptyState);
+  const [state, setState] = useState<HubState>(() => ({
+    ...emptyState,
+    applying: localStorage.getItem("sh.updating") === "1",
+  }));
   const send = (msg: Record<string, unknown>) => {
     const ws = wsRef.current;
     if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
@@ -199,8 +204,10 @@ export function useHub() {
       switch (msg.type) {
         case "init": {
           const i = msg as Record<string, unknown>;
+          localStorage.removeItem("sh.updating");
           setState({
             connected: true,
+            applying: false,
             app: i.app as AppInfo,
             conn: (i.conn as ConnInfo) ?? null,
             twitchViewers: typeof i.twitchViewers === "number" ? (i.twitchViewers as number) : -1,
@@ -276,7 +283,10 @@ export function useHub() {
           break;
         case "notice": {
           const id = ++noticeSeq;
-          setState((s) => ({ ...s, notice: msg.text as string }));
+          const text = msg.text as string;
+          const applying = text.startsWith("installing update");
+          if (applying) localStorage.setItem("sh.updating", "1");
+          setState((s) => ({ ...s, notice: text, applying: s.applying || applying }));
           window.setTimeout(() => {
             setState((s) => (s.notice === (msg.text as string) ? { ...s, notice: "" } : s));
           }, 7000);
