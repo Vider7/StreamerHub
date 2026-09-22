@@ -43,7 +43,7 @@ Brand the streamer chose: orange, purple, black.
 
 - Flats: no glow, no shadows; elevation shown only by border color (R-12, R-13).
 - Corner radius: 10px on panels, 8px on buttons and inputs, 6px on list rows and controls; round surfaces are reserved for the live/status dots and the circular play button. Nothing else is pill-shaped (R-11).
-- Icons are Font Awesome (kit script in `index.html`), owner-chosen as the single icon language for transport, badges, and controls. Reason: one consistent set instead of mixed text glyphs; every icon marks a real function, never decoration (R-04, R-09).
+- Icons are Font Awesome (kit script in `index.html`) for badges, handles, and controls; transport keeps light text-presentation glyphs. Reason: owner chose FA as the icon language, but solid FA playback glyphs read too heavy next to the quiet rack, so play/pause/skip stay thin (R-04, R-31).
 - One accent at a time: the active filter tab, primary action, live status, progress bar, bot tag (R-29).
 - Per-user chat colors stay inside the family: muted oranges, ambers, mauves, lavenders, plums. Cohesion with the theme, no rainbow; red is never used for a user so the TikTok tag owns it.
 - Album art: the playing song shows a square cover tile; small tiles in queue and search rows. Fallback is a flat ♪ tile, never a broken image (R-27).

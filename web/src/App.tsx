@@ -584,21 +584,21 @@ function NowPlaying({ music, pos, send }: { music: Music | null; pos: { position
           {now && <div className="progress-handle" style={{ left: pct + "%" }} />}
         </div>
         <div className="transport">
-          <IconBtn title="previous song" onClick={() => send({ type: "prev" })}><i className="fa-solid fa-backward-step" aria-hidden="true" /></IconBtn>
+          <IconBtn title="previous song" onClick={() => send({ type: "prev" })}>{"\u23EE\uFE0E"}</IconBtn>
           <button className="play" onClick={() => send({ type: "pause", paused: playingRef.current })} aria-label="toggle play pause">
-            {now && !playing ? <i className="fa-solid fa-play" aria-hidden="true" /> : <i className="fa-solid fa-pause" aria-hidden="true" />}
+            {now && !playing ? "\u23F5\uFE0E" : "\u23F8\uFE0E"}
           </button>
           {now && (
             <IconBtn className={"like" + (liked ? " liked" : "")} title={liked ? "undo like" : "like this song"} onClick={likeCurrent}>
-              <i className={liked ? "fa-solid fa-heart" : "fa-regular fa-heart"} aria-hidden="true" />
+              {liked ? "\u2665" : "\u2661"}
             </IconBtn>
           )}
           {now && (
             <IconBtn className="block" title="block this song - it will never play again" onClick={() => send({ type: "block", id: now.id, title: now.title, channel: now.channel, duration: now.duration })}>
-              <i className="fa-solid fa-ban" aria-hidden="true" />
+              {"\u2297"}
             </IconBtn>
           )}
-          <IconBtn title="skip to next" onClick={() => send({ type: "skip" })}><i className="fa-solid fa-forward-step" aria-hidden="true" /></IconBtn>
+          <IconBtn title="skip to next" onClick={() => send({ type: "skip" })}>{"\u23ED\uFE0E"}</IconBtn>
         </div>
         <div className="volrow">
           <span className="vol-label">vol</span>
