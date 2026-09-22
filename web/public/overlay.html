@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>queue overlay</title>
+<style>
+  :root {
+    --accent: #ff9f1c;
+    --txt: #f2f0f5;
+    --dim: #8e8898;
+    --hair: rgba(255, 255, 255, 0.08);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: transparent; color: var(--txt); font-family: "Segoe UI", Arial, sans-serif; overflow: hidden; }
+  #wrap {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    max-height: 100vh;
+    padding: 8px 12px 10px;
+    font-size: 14px;
+    line-height: 1.35;
+  }
+  .now {
+    display: none;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 10px;
+    margin-bottom: 6px;
+    border-radius: 6px;
+    background: rgba(10, 10, 12, 0.55);
+    font-weight: 600;
+    font-size: 13px;
+    border: 1px solid var(--hair);
+  }
+  .now.paused { opacity: 0.7; }
+  .now .ndot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex: none; }
+  .now.paused .ndot { background: var(--dim); }
+  .now .nby { color: var(--dim); font-weight: 400; margin-left: auto; }
+  .rows {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 10px;
+    border-radius: 6px;
+    background: rgba(10, 10, 12, 0.55);
+    border: 1px solid var(--hair);
+    overflow: hidden;
+  }
+  .row .num {
+    flex: none;
+    width: 22px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+    font-weight: 700;
+    color: var(--accent);
+  }
+  .row .title {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .row .by {
+    color: var(--dim);
+    font-size: 12px;
+    margin-left: auto;
+    white-space: nowrap;
+  }
+  .empty {
+    padding: 12px;
+    text-align: center;
+    color: var(--dim);
+    background: rgba(10, 10, 12, 0.45);
+    border-radius: 6px;
+  }
+  #conn {
+    position: fixed;
+    top: 6px;
+    right: 8px;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: #35c26b;
+    box-shadow: 0 0 0 1px rgba(0,0,0,.4);
+  }
+  #conn.off { background: #ff5b5b; }
+</style>
+</head>
+<body>
+  <div id="conn" class="off"></div>
+  <div id="wrap">
+    <div class="now" id="now">
+      <span class="ndot"></span>
+      <span class="ntitle" id="nowTitle"></span>
+      <span class="nby" id="nowBy"></span>
+    </div>
+    <div class="rows" id="rows"></div>
+  </div>
+  <script>
+    const nowEl = document.getElementById("now");
+    const nowTitle = document.getElementById("nowTitle");
+    const nowBy = document.getElementById("nowBy");
+    const rowsEl = document.getElementById("rows");
+    const connEl = document.getElementById("conn");
+
+    function render(music) {
+      const q = Array.isArray(music?.queue) ? music.queue : [];
+
+      if (music?.now) {
+        nowEl.style.display = "flex";
+        nowEl.classList.toggle("paused", music.playing === false);
+        nowTitle.textContent = music.now.title || "";
+        nowBy.textContent = music.now.by && music.now.by !== "you" ? ("by " + music.now.by) : "";
+      } else {
+        nowEl.style.display = "none";
+      }
+
+      const frag = document.createDocumentFragment();
+      if (q.length === 0) {
+        const d = document.createElement("div");
+        d.className = "empty";
+        d.textContent = "queue is empty";
+        frag.appendChild(d);
+      } else {
+        q.forEach((t, i) => {
+          const r = document.createElement("div");
+          r.className = "row";
+          const num = document.createElement("span");
+          num.className = "num";
+          num.textContent = String(i + 1);
+          const title = document.createElement("span");
+          title.className = "title";
+          title.textContent = t.title || "";
+          title.title = t.title || "";
+          const by = document.createElement("span");
+          by.className = "by";
+          by.textContent = t.by && t.by !== "you" ? ("by " + t.by) : "";
+          r.append(num, title, by);
+          frag.appendChild(r);
+        });
+      }
+      rowsEl.replaceChildren(frag);
+    }
+
+    function connect() {
+      connEl.classList.add("off");
+      let ws;
+      try { ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws"); }
+      catch { return retry(); }
+      ws.onopen = () => connEl.classList.remove("off");
+      ws.onmessage = (ev) => {
+        let m;
+        try { m = JSON.parse(ev.data); } catch { return; }
+        if (m.type === "init") render(m.music);
+        else if (m.type === "music") render(m.music);
+      };
+      ws.onclose = retry;
+      ws.onerror = () => { try { ws.close(); } catch {} };
+    }
+    function retry() {
+      connEl.classList.add("off");
+      setTimeout(connect, 2500);
+    }
+    connect();
+  </script>
+</body>
+</html>

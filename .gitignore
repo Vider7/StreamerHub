@@ -1,0 +1,20 @@
+# build / release outputs (regenerable)
+dist/
+release/stage/
+release/*.zip
+release/version.json
+
+# dotnet
+[Bb]in/
+[Oo]bj/
+
+# node
+web/node_modules/
+
+# generated dashboard (rebuilt by `npm run build` in web/)
+StreamerHub/wwwroot/
+
+# runtime / installer leftovers
+mpvlog.txt
+logs/
+*.partial

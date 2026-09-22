@@ -1,0 +1,38 @@
+{
+  "AppName": "StreamerHub",
+  "Layout": "CSM",
+  "Port": 51324,
+  "AutoOpenBrowser": true,
+  "Twitch": {
+    "Channel": "",
+    "ClientId": "",
+    "ClientSecret": "",
+    "PollViewersSeconds": 45
+  },
+  "TikTok": {
+    "Username": "",
+    "CustomSigningServer": "",
+    "SigningServerApiKey": ""
+  },
+  "Music": {
+    "Command": "!sr",
+    "YtDlpPath": "",
+    "YtDlpCookiesFile": "",
+    "DefaultVolume": 25,
+    "MaxTrackMinutes": 10,
+    "MaxQueueLength": 20,
+    "MaxQueryLength": 100,
+    "RateLimitSeconds": 15,
+    "GlobalCooldownSeconds": 5,
+    "AutoNextRadio": true,
+    "MpvPath": "",
+    "AudioDevice": "",
+    "Equalizer": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    "Loudness": false
+  },
+  "Updater": {
+    "Enabled": true,
+    "Feed": "https://raw.githubusercontent.com/Vider7/StreamerHub/main/version.json",
+    "AutoCheckHours": 2.0
+  }
+}
