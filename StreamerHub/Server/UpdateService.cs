@@ -19,6 +19,7 @@ public sealed class UpdateService : IDisposable
     string _readyVersion = "";
 
     public event Action? QuitRequested;
+    public event Action? PauseRequested;
 
     public string CurrentVersion { get; }
     public string Status => Volatile.Read(ref _status);
@@ -192,6 +193,7 @@ public sealed class UpdateService : IDisposable
         }
         try
         {
+            PauseRequested?.Invoke();
             var psi = new ProcessStartInfo
             {
                 FileName = exePath,

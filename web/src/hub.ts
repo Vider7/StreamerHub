@@ -54,6 +54,7 @@ export type Stats = {
   tiktokPerMin: number;
   twitchViewers: number;
   viewers: number;
+  peakViewers: number;
   likes: number;
   totalLikes: number;
   gifts: number;

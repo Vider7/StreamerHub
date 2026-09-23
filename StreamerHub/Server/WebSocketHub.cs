@@ -480,6 +480,7 @@ public sealed class WebSocketHub
             tiktokPerMin = perMin.TikTok,
             twitchViewers = TwitchViewers,
             viewers = _hub.ViewersTikTok,
+            peakViewers = _hub.PeakViewers,
             likes = _hub.Liked,
             totalLikes = _hub.TotalLikes,
             gifts = _hub.Gifts,

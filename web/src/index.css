@@ -517,27 +517,6 @@ select:focus-visible {
   overflow-y: auto;
 }
 
-.stat {
-  background: var(--raised);
-  border: 1px solid var(--hair);
-  border-radius: 8px;
-  padding: 10px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.stat-value {
-  font-size: 21px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.2px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .stat-label {
   font-size: 10.5px;
   color: var(--dim);
@@ -546,6 +525,38 @@ select:focus-visible {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.statgroup {
+  grid-column: 1 / -1;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1.1px;
+  text-transform: uppercase;
+  color: var(--ghost);
+  margin: 12px 0 2px;
+}
+
+.statgrid > .statgroup:first-child {
+  margin-top: 0;
+}
+
+.srow {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 2px;
+}
+
+.srow + .srow {
+  border-top: 1px solid var(--hair);
+}
+
+.srow .sval {
+  font-size: 15px;
+  font-weight: 700;
 }
 
 /* ---------- music ---------- */
@@ -1181,6 +1192,30 @@ input.eq-slider {
   line-height: 1.7;
 }
 
+.credits {
+  margin: 0;
+  padding: 18px 0;
+  text-align: center;
+  font-size: 13px;
+  color: var(--txt);
+}
+
+.credits p {
+  margin: 10px 0 0;
+}
+
+.credits .who {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.pfp {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
 /* ---------- status bar ---------- */
 
 .statusbar {
@@ -1242,11 +1277,34 @@ input.eq-slider {
   position: fixed;
   inset: 0;
   background: rgba(4, 5, 8, 0.62);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 60;
   padding: 24px;
+  opacity: 0;
+  transition: opacity 150ms ease-out;
+}
+
+.overlay.show {
+  opacity: 1;
+}
+
+.overlay .modal {
+  transform: translateY(8px) scale(0.985);
+  transition: transform 150ms ease-out;
+}
+
+.overlay.show .modal {
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .overlay, .overlay .modal {
+    transition: none;
+  }
 }
 
 .modal {
@@ -1323,6 +1381,10 @@ input.eq-slider {
   border-color: var(--hair);
   border-bottom-color: var(--panel);
   background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+
+.tab.right {
+  margin-left: auto;
 }
 
 .modal-body {

@@ -164,7 +164,7 @@ export default function App() {
         </div>
       </footer>
 
-      {state.setup?.required && !wizSkip && (
+      <Overlay show={!!(state.setup?.required && !wizSkip)} label="first time setup">
         <SetupWizard
           account={state.account}
           app={state.app}
@@ -174,9 +174,9 @@ export default function App() {
             setWizSkip(true);
           }}
         />
-      )}
+      </Overlay>
 
-      {settingsOpen && (
+      <Overlay show={settingsOpen} label="settings" onBackdrop={() => setSettingsOpen(false)}>
         <SettingsModal
           account={state.account}
           app={state.app}
@@ -187,15 +187,13 @@ export default function App() {
           onTheme={pickTheme}
           onClose={() => setSettingsOpen(false)}
         />
-      )}
-      {state.applying && (
-        <div className="overlay" role="alert" aria-label="installing update">
-          <div className="modal">
-            <div className="modal-head"><span className="modal-title">installing update</span></div>
-            <div className="modal-body"><p className="hint">hang on, the new version is swapping in and the app will restart. music resumes on its own.</p></div>
-          </div>
+      </Overlay>
+      <Overlay show={state.applying} label="installing update" role="alert">
+        <div className="modal">
+          <div className="modal-head"><span className="modal-title">installing update</span></div>
+          <div className="modal-body"><p className="hint">hang on, the new version is swapping in and the app will restart. music resumes on its own.</p></div>
         </div>
-      )}
+      </Overlay>
     </div>
   );
 }
@@ -417,11 +415,11 @@ function ChatRow({ e }: { e: any }) {
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Srow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="stat">
-      <span className="stat-value">{value}</span>
+    <div className="srow">
       <span className="stat-label">{label}</span>
+      <span className="sval mono">{value}</span>
     </div>
   );
 }
@@ -435,15 +433,19 @@ const PanelStatsM = React.memo(function PanelStats({ stats, twitchViewers, strip
         <span className="strip-meta">{stats ? fmt(stats.total) + " messages" : ""}</span>
       </div>
       <div className="statgrid">
-        <Stat label="live viewers" value={stats ? fmt(stats.viewers) : "-"} />
-        <Stat label="total likes" value={stats ? fmt(stats.totalLikes) : "-"} />
-        <Stat label="twitch viewers" value={twitchViewers < 0 ? "off" : fmt(twitchViewers)} />
-        <Stat label="msg / min" value={stats ? fmt(stats.tiktokPerMin + stats.twitchPerMin) : "-"} />
-        <Stat label="gifts" value={stats ? fmt(stats.gifts) : "-"} />
-        <Stat label="gift value" value={stats ? fmt(stats.giftValue) : "-"} />
-        <Stat label="follows" value={stats ? fmt(stats.follows) : "-"} />
-        <Stat label="shares" value={stats ? fmt(stats.shares) : "-"} />
-        <Stat label="joins" value={stats ? fmt(stats.joins) : "-"} />
+        <div className="statgroup">audience</div>
+        <Srow label="live viewers" value={stats ? fmt(stats.viewers) : "-"} />
+        <Srow label="peak viewers" value={stats ? fmt(stats.peakViewers) : "-"} />
+        <Srow label="twitch viewers" value={twitchViewers < 0 ? "off" : fmt(twitchViewers)} />
+        <Srow label="follows" value={stats ? fmt(stats.follows) : "-"} />
+        <Srow label="joins" value={stats ? fmt(stats.joins) : "-"} />
+        <div className="statgroup">engagement</div>
+        <Srow label="total likes" value={stats ? fmt(stats.totalLikes) : "-"} />
+        <Srow label="msg / min" value={stats ? fmt(stats.tiktokPerMin + stats.twitchPerMin) : "-"} />
+        <Srow label="shares" value={stats ? fmt(stats.shares) : "-"} />
+        <div className="statgroup">gifts</div>
+        <Srow label="gifts" value={stats ? fmt(stats.gifts) : "-"} />
+        <Srow label="gift value" value={stats ? fmt(stats.giftValue) : "-"} />
       </div>
     </div>
   );
@@ -999,6 +1001,35 @@ const THEME_COLORS: Record<string, string> = {
   rgb: "linear-gradient(90deg, #ff9f1c, #ff5d7a, #a06bff, #56a6ff, #3ddc97)",
 };
 
+function Overlay({ show, label, role, onBackdrop, children }: {
+  show: boolean;
+  label: string;
+  role?: string;
+  onBackdrop?: () => void;
+  children: React.ReactNode;
+}) {
+  const [render, setRender] = React.useState(show);
+  const [on, setOn] = React.useState(false);
+  React.useEffect(() => {
+    if (show) {
+      setRender(true);
+      const r = requestAnimationFrame(() => requestAnimationFrame(() => setOn(true)));
+      return () => cancelAnimationFrame(r);
+    }
+    if (!render) return;
+    setOn(false);
+    const t = window.setTimeout(() => setRender(false), 170);
+    return () => window.clearTimeout(t);
+  }, [show]);
+  if (!render) return null;
+  return (
+    <div className={"overlay" + (on ? " show" : "")} role={role ?? "dialog"} aria-modal="true" aria-label={label}
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onBackdrop?.(); }}>
+      {children}
+    </div>
+  );
+}
+
 function SetupWizard({ account, app, send, onSkip }: { account: AccountInfo | null; app: AppInfo | null; send: (m: Record<string, unknown>) => void; onSkip: () => void }) {
   const [tw, setTw] = React.useState(account?.twitchChannel ?? "");
   const [tt, setTt] = React.useState(account?.tiktokUser ?? "");
@@ -1026,7 +1057,7 @@ function SetupWizard({ account, app, send, onSkip }: { account: AccountInfo | nu
   };
 
   return (
-    <div className="overlay" role="dialog" aria-modal="true" aria-label="first time setup">
+    <>
       <div className="modal">
         <div className="modal-head">
           <span className="modal-title">first-time setup</span>
@@ -1067,7 +1098,7 @@ function SetupWizard({ account, app, send, onSkip }: { account: AccountInfo | nu
           </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }
 
@@ -1081,7 +1112,7 @@ function SettingsModal({ account, app, logs, logError, send, theme, onTheme, onC
   onTheme: (t: string) => void;
   onClose: () => void;
 }) {
-  const [tab, setTab] = React.useState<"themes" | "account" | "logs">("themes");
+  const [tab, setTab] = React.useState<"themes" | "account" | "logs" | "credits">("themes");
   const [tw, setTw] = React.useState(account?.twitchChannel ?? "");
   const [tt, setTt] = React.useState(account?.tiktokUser ?? "");
   const [cid, setCid] = React.useState("");
@@ -1114,15 +1145,15 @@ function SettingsModal({ account, app, logs, logError, send, theme, onTheme, onC
   };
 
   return (
-    <div className="overlay" role="dialog" aria-modal="true" aria-label="settings" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    <>
       <div className="modal">
         <div className="modal-head">
           <span className="modal-title">settings</span>
           <button className="modal-close" onClick={onClose} aria-label="close settings"><i className="fa-solid fa-xmark" aria-hidden="true" /></button>
         </div>
         <div className="tabs" role="tablist">
-          {(["themes", "account", "logs"] as const).map((t) => (
-            <button key={t} className={"tab" + (tab === t ? " on" : "")} onClick={() => setTab(t)} role="tab" aria-selected={tab === t}>
+          {(["themes", "account", "logs", "credits"] as const).map((t) => (
+            <button key={t} className={"tab" + (tab === t ? " on" : "") + (t === "credits" ? " right" : "")} onClick={() => setTab(t)} role="tab" aria-selected={tab === t}>
               {t}
             </button>
           ))}
@@ -1180,8 +1211,14 @@ function SettingsModal({ account, app, logs, logError, send, theme, onTheme, onC
               <pre className="logbox mono">{logs.length ? logs.join("\n") : "..."}</pre>
             </>
           )}
+          {tab === "credits" && (
+            <div className="credits">
+              <img className="pfp" src="./pfp.png" alt="Vida" />
+              <p>made by <span className="who">Vida.</span></p>
+            </div>
+          )}
         </div>
       </div>
-    </div>
+    </>
   );
 }

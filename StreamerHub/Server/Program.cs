@@ -250,6 +250,11 @@ internal static class Program
             _ = app.StopAsync(CancellationToken.None);
         });
         updater.QuitRequested += quitApp;
+        updater.PauseRequested += () =>
+        {
+            try { _mpv?.SetPause(true); } catch { }
+            Thread.Sleep(600);
+        };
         TrayApp.Start(url, quitApp, updater,
             onPlayPause: () => { if (_music?.NowPlaying != null && _mpv is { Available: true }) _mpv.SetPause(!_mpv.Paused); },
             onNext: () => _music?.Skip(),

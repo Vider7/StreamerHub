@@ -25,6 +25,7 @@ public sealed class ChatHub
     public long TwitchMessages { get; private set; }
     public long TikTokMessages { get; private set; }
     public int ViewersTikTok { get; private set; }
+    public int PeakViewers { get; private set; }
     public long Liked { get; private set; }
     public long TotalLikes { get; private set; }
     public long Gifts { get; private set; }
@@ -111,7 +112,11 @@ public sealed class ChatHub
 
     public void ViewerCount(int viewers)
     {
-        lock (_gate) ViewersTikTok = viewers;
+        lock (_gate)
+        {
+            ViewersTikTok = viewers;
+            if (viewers > PeakViewers) PeakViewers = viewers;
+        }
         StatsChanged?.Invoke();
     }
 
