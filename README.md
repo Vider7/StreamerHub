@@ -96,6 +96,7 @@ Your settings and lists survive every update. If anything ever goes truly sidewa
 | Action | How |
 |---|---|
 | Add a song | Search box, type a name, Enter — **play** starts it now, **+ queue** lines it up |
+| Reorder the line | Drag queue rows up or down |
 | Jump around a song | Drag the thin bar under the title, or arrow keys nudge 5 seconds |
 | Controls | Play/pause, previous, skip, volume slider |
 | EQ & loudness | Under the player, saved automatically |
@@ -109,6 +110,7 @@ Viewers request songs with `!sr` plus a song name (links are rejected, names onl
 | Action | How |
 |---|---|
 | Rearrange | Drag panels by their title bars (chat / stats / music) |
+| Resize activity | Drag the divider above the activity feed up or down |
 | Change theme | Gear icon → themes (amber, rose, mint, violet, blue, rgb) |
 | Open it again | Double-click the tray icon |
 | Stop it | Right-click the tray icon → **Quit** |

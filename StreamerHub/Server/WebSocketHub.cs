@@ -142,6 +142,13 @@ public sealed class WebSocketHub
                     _music.RemoveAt(i);
                     break;
                 }
+                case "move":
+                {
+                    var from = doc.RootElement.TryGetProperty("from", out var f) && f.ValueKind == JsonValueKind.Number ? f.GetInt32() : -1;
+                    var to = doc.RootElement.TryGetProperty("to", out var t) && t.ValueKind == JsonValueKind.Number ? t.GetInt32() : -1;
+                    _music.Move(from, to);
+                    break;
+                }
                 case "volume":
                 {
                     var v = doc.RootElement.GetProperty("value").GetInt32();

@@ -244,32 +244,61 @@ function UpdateChip({ update, send }: { update: UpdateInfo; send: (m: Record<str
 const PanelChatM = React.memo(function PanelChat({ chat, activity, strip, send }: { chat: { _k?: number }[]; activity: { _k?: number }[]; strip: StripDrag; send: (m: Record<string, unknown>) => void }) {
   const rows = (chat as any[]).slice();
   rows.reverse();
+  const [split, setSplit] = React.useState(() => {
+    const n = Number(localStorage.getItem("sh.chatsplit") ?? "54");
+    return Number.isFinite(n) ? Math.min(85, Math.max(15, n)) : 54;
+  });
+  const wrapRef = React.useRef<HTMLDivElement>(null);
+  const dragSplit = React.useRef<{ y: number; split: number; total: number } | null>(null);
+  const onSplitDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    const wrap = wrapRef.current;
+    if (!wrap) return;
+    const cl = wrap.querySelector(".chatlist") as HTMLElement | null;
+    const ac = wrap.querySelector(".actcol") as HTMLElement | null;
+    if (!cl || !ac) return;
+    const total = cl.offsetHeight + ac.offsetHeight;
+    if (total <= 0) return;
+    dragSplit.current = { y: e.clientY, split, total };
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  };
+  const onSplitMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const d = dragSplit.current;
+    if (!d) return;
+    const next = Math.min(85, Math.max(15, d.split + ((e.clientY - d.y) / d.total) * 100));
+    setSplit(next);
+    localStorage.setItem("sh.chatsplit", String(Math.round(next)));
+  };
+  const endSplit = () => {
+    dragSplit.current = null;
+  };
   return (
-    <div className="panel-inner">
+    <div className="panel-inner" ref={wrapRef}>
       <div className="strip" {...strip}>
         <span className="grip" aria-hidden="true"><i className="fa-solid fa-grip-vertical" aria-hidden="true" /></span>
         <span className="strip-title">{"chat"}</span>
         <span className="strip-meta">{chat.length} shown</span>
         <ClearChat send={send} />
       </div>
-      <div className="chatlist">
+      <div className="chatlist" style={{ flex: `1 1 ${split}%` }}>
         {rows.map((e) => (
           <ChatRow key={e._k ?? e.time + e.msg} e={e} />
         ))}
         {rows.length === 0 && <div className="empty">no messages yet</div>}
       </div>
-      <ActivityFeed activity={activity as any[]} send={send} />
+      <div className="chatsplit" role="separator" aria-orientation="horizontal" aria-label="resize activity feed" title="drag to resize activity"
+        onPointerDown={onSplitDown} onPointerMove={onSplitMove} onPointerUp={endSplit} onPointerCancel={endSplit} />
+      <ActivityFeed activity={activity as any[]} send={send} style={{ flex: `1 1 ${100 - split}%` }} />
     </div>
   );
 });
 
-function ActivityFeed({ activity, send }: { activity: { _k?: number; kind?: string; time: string; text: string; color?: string }[]; send: (m: Record<string, unknown>) => void }) {
+function ActivityFeed({ activity, send, style }: { activity: { _k?: number; kind?: string; time: string; text: string; color?: string }[]; send: (m: Record<string, unknown>) => void; style?: React.CSSProperties }) {
   const [showGifts, setShowGifts] = React.useState(() => (localStorage.getItem("sh.gifts") ?? "1") === "1");
   const rows = activity.slice();
   rows.reverse();
   const filtered = showGifts ? rows : rows.filter((r) => r.kind !== "gift");
   return (
-    <div className="actcol">
+    <div className="actcol" style={style}>
       <div className="actbar">
         <span className="strip-title">activity</span>
         <span className="strip-meta">{filtered.length} shown</span>
@@ -779,10 +808,22 @@ function TrackThumb({ id, className, alt }: { id: string; className?: string; al
 
 const QueueListM = React.memo(function QueueList({ music, send }: { music: Music | null; send: (m: Record<string, unknown>) => void }) {
   const q = music?.queue ?? [];
+  const [from, setFrom] = React.useState<number | null>(null);
+  const [over, setOver] = React.useState<number | null>(null);
+  const finish = () => { setFrom(null); setOver(null); };
   return (
-    <div className="queuelist">
+    <div className="queuelist" onDragOver={(e) => e.preventDefault()} onDrop={(e) => {
+      e.preventDefault();
+      const f = from ?? Number(e.dataTransfer.getData("text/plain"));
+      if (Number.isFinite(f) && over !== null && f !== over) send({ type: "move", from: f, to: over });
+      finish();
+    }}>
       {q.map((t, i) => (
-        <div className="qrow" key={t.id + i}>
+        <div className={"qrow" + (over === i ? " dropto" : "")} key={t.id + i}
+          draggable
+          onDragStart={(e) => { setFrom(i); e.dataTransfer.setData("text/plain", String(i)); e.dataTransfer.effectAllowed = "move"; }}
+          onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; if (over !== i) setOver(i); }}
+          onDragEnd={finish}>
           <TrackThumb id={t.id} className="qart" alt="" />
           <span className="qidx mono">{i + 1}</span>
           <span className="qtitle" title={t.title}>{t.title}</span>

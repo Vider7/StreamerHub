@@ -462,6 +462,19 @@ public sealed class MusicEngine
         return removed;
     }
 
+    public void Move(int from, int to)
+    {
+        lock (_queue)
+        {
+            if (from < 0 || from >= _queue.Count || to < 0 || to >= _queue.Count || from == to) return;
+            var track = _queue[from];
+            _queue.RemoveAt(from);
+            _queue.Insert(to, track);
+        }
+        StateChanged?.Invoke();
+        PrefetchNext();
+    }
+
     void StartRadioFill()
     {
         if (!_cfg.AutoNextRadio) return;

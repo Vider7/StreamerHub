@@ -407,6 +407,29 @@ select:focus-visible {
 
 .chatlist {
   flex: 1 1 54%;
+  min-height: 0;
+}
+
+.chatsplit {
+  flex: none;
+  height: 9px;
+  margin: 6px 0 -4px;
+  cursor: ns-resize;
+  display: flex;
+  align-items: center;
+  touch-action: none;
+}
+
+.chatsplit::after {
+  content: "";
+  height: 3px;
+  flex: 1;
+  border-radius: 2px;
+  background: transparent;
+}
+
+.chatsplit:hover::after {
+  background: var(--hair);
 }
 
 .actcol {
@@ -982,6 +1005,15 @@ input.eq-slider {
 .qrow:hover,
 .rrow:hover {
   background: rgba(255, 255, 255, 0.03);
+}
+
+.qrow[draggable="true"] {
+  cursor: grab;
+}
+
+.qrow.dropto {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
 .qidx {
