@@ -15,6 +15,7 @@ public sealed class MusicEngine
     int _generation;
     bool _radioBusy;
     bool _radioQueued;
+    string? _radioEarlyFor;
 
     public Track? NowPlaying { get; private set; }
     public double Position { get; private set; }
@@ -272,6 +273,7 @@ public sealed class MusicEngine
         Position = 0;
         Playing = true;
         _generation++;
+        _radioEarlyFor = null;
         _cfg.LastPlayed = ToLastPlayed(track, 0, true);
         StateChanged?.Invoke();
         Notice?.Invoke("playing: " + track.Title + (track.RequestedBy.Length > 0 ? " (by " + track.RequestedBy + ")" : ""));
@@ -287,7 +289,11 @@ public sealed class MusicEngine
             next = _queue.Count > 0 ? _queue[0].Result.Id : null;
         }
         if (!string.IsNullOrEmpty(next) && next != cur)
+        {
             AudioCache.Prefetch(this, cur ?? "", next);
+            return;
+        }
+        if (cur != null) StartRadioEarlyFill();
     }
 
     static LastPlayedState ToLastPlayed(Track track, double position, bool playing) => new()
@@ -419,6 +425,7 @@ public sealed class MusicEngine
             _cfg.LastPlayed = null;
         }
         StateChanged?.Invoke();
+        PrefetchNext();
     }
 
     public void Prev()
@@ -470,6 +477,80 @@ public sealed class MusicEngine
         _ = Task.Run(FillRadioAsync);
     }
 
+    void StartRadioEarlyFill()
+    {
+        string? cur;
+        lock (_queue)
+        {
+            cur = NowPlaying?.Result.Id;
+            if (cur == null || !_cfg.AutoNextRadio || _queue.Count > 0 || _radioBusy || _radioEarlyFor == cur) return;
+            _radioEarlyFor = cur;
+            _radioBusy = true;
+        }
+        _ = Task.Run(() => FillRadioEarlyAsync(cur));
+    }
+
+    async Task FillRadioEarlyAsync(string anchor)
+    {
+        try
+        {
+            var found = await _resolver.SearchRelatedAsync(anchor);
+            var pick = PickRadioTrack(found, anchor);
+            if (pick == null) return;
+            lock (_queue)
+            {
+                if (NowPlaying?.Result.Id != anchor) return;
+                if (_queue.Any(q => q.Result.Id == pick.Result.Id)) return;
+                _queue.Add(pick);
+            }
+            StateChanged?.Invoke();
+            BeginOrNext();
+            PrefetchNext();
+            Log.Info("radio queued early: " + pick.Result.Title);
+        }
+        catch (Exception ex)
+        {
+            Log.Warn("radio early fill failed: " + ex.Message);
+        }
+        finally
+        {
+            bool again;
+            lock (_queue)
+            {
+                _radioBusy = false;
+                again = _radioQueued;
+                _radioQueued = false;
+            }
+            if (again) StartRadioFill();
+        }
+    }
+
+    Track? PickRadioTrack(List<TrackResult> found, string anchor)
+    {
+        List<string> seenTitles;
+        HashSet<string> used;
+        lock (_queue)
+        {
+            seenTitles = new List<string>();
+            foreach (var h in _history.TakeLast(10)) seenTitles.Add(NormalizeTitle(h.Result.Title));
+            foreach (var q in _queue) seenTitles.Add(NormalizeTitle(q.Result.Title));
+            seenTitles.RemoveAll(s => s.Length == 0);
+            used = new HashSet<string>();
+            foreach (var h in _history) used.Add(h.Result.Id);
+            foreach (var q in _queue) used.Add(q.Result.Id);
+        }
+        foreach (var r in found)
+        {
+            if (r.Duration <= 0 || r.Duration > _cfg.MaxTrackMinutes * 60.0) continue;
+            var rn = NormalizeTitle(r.Title);
+            if (rn.Length == 0) continue;
+            var dup = seenTitles.Any(t => t == rn || t.Contains(rn, StringComparison.Ordinal) || rn.Contains(t, StringComparison.Ordinal));
+            if (r.Id == anchor || used.Contains(r.Id) || dup || IsBlocked(r.Id)) continue;
+            return new Track { Result = r, RequestedBy = "radio", RequestedPlatform = null };
+        }
+        return null;
+    }
+
     async Task FillRadioAsync()
     {
         string? anchor = null;
@@ -490,41 +571,32 @@ public sealed class MusicEngine
         try
         {
             var found = await _resolver.SearchRelatedAsync(anchor);
-            var used = new HashSet<string>();
-            var added = 0;
-            lock (_queue)
+            var pick = PickRadioTrack(found, anchor);
+            var added = false;
+            if (pick != null)
             {
-                if (NowPlaying == null)
+                lock (_queue)
                 {
-                    var seenTitles = new List<string>();
-                    foreach (var h in _history.TakeLast(10)) seenTitles.Add(NormalizeTitle(h.Result.Title));
-                    foreach (var q in _queue) seenTitles.Add(NormalizeTitle(q.Result.Title));
-                    seenTitles.RemoveAll(s => s.Length == 0);
-                    foreach (var h in _history) used.Add(h.Result.Id);
-                    foreach (var q in _queue) used.Add(q.Result.Id);
-                    foreach (var r in found)
+                    if (NowPlaying == null && !_queue.Any(q => q.Result.Id == pick.Result.Id))
                     {
-                        if (r.Duration <= 0 || r.Duration > _cfg.MaxTrackMinutes * 60.0) continue;
-                        var rn = NormalizeTitle(r.Title);
-                        if (rn.Length == 0) continue;
-                        var dup = seenTitles.Any(t => t == rn || t.Contains(rn, StringComparison.Ordinal) || rn.Contains(t, StringComparison.Ordinal));
-                        if (r.Id == anchor || used.Contains(r.Id) || dup || IsBlocked(r.Id)) continue;
-                        used.Add(r.Id);
-                        _queue.Add(new Track { Result = r, RequestedBy = "radio", RequestedPlatform = null });
-                        added++;
-                        break;
+                        _queue.Add(pick);
+                        added = true;
                     }
                 }
             }
-            if (added > 0)
+            if (added)
             {
                 StateChanged?.Invoke();
                 BeginOrNext();
                 Notice?.Invoke("radio next");
             }
-            else
+            else if (pick == null)
             {
                 Notice?.Invoke("radio: no similar songs found, music stopped");
+            }
+            else
+            {
+                StateChanged?.Invoke();
             }
         }
         catch (Exception ex)

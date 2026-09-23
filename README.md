@@ -41,7 +41,7 @@ Viewers, likes, gifts (with diamond value), follows, shares, joins. They update 
 | **Full transport** | Play, pause, previous, skip, volume, scrub bar (drag or arrow keys nudge 5s) |
 | **EQ & loudness** | Slim 10-band equalizer (plus Flat / Bass+ / Vocal / Club presets) and a loudness switch, both saved |
 | **Library lists** | History, liked, and blocked songs live under the player |
-| **Radio fallback** | When the queue runs out, one similar song plays. Turn "radio off" to stop instead |
+| **Radio fallback** | When the queue runs out, one similar song plays, picked and preloaded before the current ends. Turn "radio off" to stop instead |
 
 ### Layout
 
