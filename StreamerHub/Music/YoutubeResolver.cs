@@ -102,7 +102,7 @@ public sealed class YoutubeResolver
                 var id = idNode.GetString();
                 if (string.IsNullOrWhiteSpace(id)) continue;
                 var title = e.TryGetProperty("title", out var t) ? t.GetString() : "";
-                var duration = e.TryGetProperty("duration", out var du) ? du.GetDouble() : 0;
+                var duration = e.TryGetProperty("duration", out var du) && du.ValueKind == JsonValueKind.Number ? du.GetDouble() : 0;
                 var channel = e.TryGetProperty("channel", out var ch) ? ch.GetString() : "";
                 list.Add(new TrackResult { Id = id!, Title = title ?? "untitled", Duration = duration, Channel = channel ?? "" });
             }
@@ -154,7 +154,7 @@ public sealed class YoutubeResolver
                 var vid = idNode.GetString();
                 if (string.IsNullOrWhiteSpace(vid)) continue;
                 var title = e.TryGetProperty("title", out var t) ? t.GetString() : "";
-                var duration = e.TryGetProperty("duration", out var du) ? du.GetDouble() : 0;
+                var duration = e.TryGetProperty("duration", out var du) && du.ValueKind == JsonValueKind.Number ? du.GetDouble() : 0;
                 var channel = e.TryGetProperty("channel", out var ch) ? ch.GetString() : "";
                 list.Add(new TrackResult { Id = vid!, Title = title ?? "untitled", Duration = duration, Channel = channel ?? "" });
             }
