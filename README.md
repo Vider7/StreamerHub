@@ -15,6 +15,10 @@ Everything your stream needs in one browser tab: chat from **Twitch** and **TikT
 
 > **Local first** — internet is only needed for the chat feeds, YouTube search, and audio. Everything else stays on your PC.
 
+<p align="center">
+  <img src="docs/dashboard.png" alt="StreamerHub dashboard: live chat, music player, and stats" width="100%" />
+</p>
+
 ---
 
 ## Features
