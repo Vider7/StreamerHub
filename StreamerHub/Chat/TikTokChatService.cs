@@ -96,6 +96,8 @@ public sealed class TikTokChatService : IDisposable
             var isMod = e.UserIdentity?.IsModeratorOfHost == true;
             var isBroad = e.UserIdentity?.IsHost == true;
             var (badge, club, level) = Fanclub(e.Sender);
+            if (e.UserIdentity?.IsSubscriberOfHost == true && badge.Length == 0)
+                Log.Info($"tiktok fanclub: {user} is subscribed but sent no usable badge");
             if (!string.IsNullOrWhiteSpace(msg))
                 _hub.Message(ChatPlatform.TikTok, user, msg.Trim(), isMod, isBroad, badge, club, level);
         };
