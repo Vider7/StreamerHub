@@ -44,7 +44,8 @@ public sealed class ChatHub
         lock (_gate) return _messages.ToArray();
     }
 
-    public void Message(ChatPlatform platform, string username, string message, bool isMod = false, bool isBroadcaster = false)
+    public void Message(ChatPlatform platform, string username, string message, bool isMod = false, bool isBroadcaster = false,
+        string fanclubBadge = "", string fanclubName = "", int fanclubLevel = 0)
     {
         var entry = new ChatEntry
         {
@@ -57,6 +58,9 @@ public sealed class ChatHub
             Tag = platform == ChatPlatform.Twitch ? "TW" : "TT",
             IsMod = isMod,
             IsBroadcaster = isBroadcaster,
+            FanclubBadge = fanclubBadge,
+            FanclubName = fanclubName,
+            FanclubLevel = fanclubLevel,
         };
         lock (_gate)
         {

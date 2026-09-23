@@ -15,6 +15,9 @@ public sealed class ChatEntry
     public string Tag { get; init; } = "";
     public bool IsMod { get; init; }
     public bool IsBroadcaster { get; init; }
+    public string FanclubBadge { get; init; } = "";
+    public string FanclubName { get; init; } = "";
+    public int FanclubLevel { get; init; }
 }
 
 public sealed class TrackResult

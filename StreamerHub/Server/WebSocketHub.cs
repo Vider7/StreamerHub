@@ -458,6 +458,9 @@ public sealed class WebSocketHub
         tag = e.Tag,
         isMod = e.IsMod,
         isBroad = e.IsBroadcaster,
+        fanclubBadge = e.FanclubBadge,
+        fanclubName = e.FanclubName,
+        fanclubLevel = e.FanclubLevel,
     };
 
     static object ActivityDto(ActivityEntry e) => new

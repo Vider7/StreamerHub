@@ -406,6 +406,7 @@ function ChatRow({ e }: { e: any }) {
           <span className={"tag " + (e.tag === "TW" ? "tw" : "tt")}>{tag}</span>
           <span className="user" style={{ color: e.color }}>
             {(e.isMod || e.isBroad) && <i className="fa-solid fa-shield-halved modmark" aria-hidden="true" />}
+            {e.fanclubBadge ? <img className="fanbadge" src={e.fanclubBadge} alt="" title={e.fanclubName ? e.fanclubName + (e.fanclubLevel > 0 ? " lv" + e.fanclubLevel : "") : "fanclub"} onError={(ev) => { (ev.currentTarget as HTMLImageElement).style.display = "none"; }} /> : null}
             {e.user}
           </span>
           <span className="msg">{e.msg}</span>

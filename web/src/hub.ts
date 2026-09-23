@@ -20,6 +20,9 @@ export type ChatEntry = {
   tag: string;
   isMod: boolean;
   isBroad: boolean;
+  fanclubBadge?: string;
+  fanclubName?: string;
+  fanclubLevel?: number;
   _k?: number;
 };
 

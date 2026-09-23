@@ -95,8 +95,9 @@ public sealed class TikTokChatService : IDisposable
             var msg = e.Message;
             var isMod = e.UserIdentity?.IsModeratorOfHost == true;
             var isBroad = e.UserIdentity?.IsHost == true;
+            var (badge, club, level) = Fanclub(e.Sender);
             if (!string.IsNullOrWhiteSpace(msg))
-                _hub.Message(ChatPlatform.TikTok, user, msg.Trim(), isMod, isBroad);
+                _hub.Message(ChatPlatform.TikTok, user, msg.Trim(), isMod, isBroad, badge, club, level);
         };
         c.OnGiftMessage += (t, e) =>
         {
@@ -170,6 +171,26 @@ public sealed class TikTokChatService : IDisposable
 
     static string? NullIfEmpty(string value) =>
         string.IsNullOrWhiteSpace(value) ? null : value;
+
+    static (string Badge, string Club, int Level) Fanclub(TikTokLiveSharp.Events.Objects.User? sender)
+    {
+        try
+        {
+            var data = sender?.Fans_Club?.Data;
+            if (data == null) return ("", "", 0);
+            var icons = data.Badge?.Icons;
+            TikTokLiveSharp.Events.Objects.Picture? pic = null;
+            if (icons != null && icons.Count > 0)
+            {
+                if (data.Level > 0 && icons.TryGetValue(data.Level, out var exact)) pic = exact;
+                else pic = icons.Values.FirstOrDefault();
+            }
+            var url = pic?.Urls?.FirstOrDefault() ?? "";
+            if (url.Length == 0) return ("", "", 0);
+            return (url, data.ClubName ?? "", data.Level);
+        }
+        catch { return ("", "", 0); }
+    }
 
     public void Stop()
     {
