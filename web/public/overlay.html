@@ -4,11 +4,17 @@
 <meta charset="utf-8" />
 <title>queue overlay</title>
 <style>
+  @property --accent { syntax: "<color>"; inherits: true; initial-value: #ff9f1c; }
   :root {
     --accent: #ff9f1c;
     --txt: #f2f0f5;
     --dim: #8e8898;
     --hair: rgba(255, 255, 255, 0.08);
+  }
+  :root.rgb { animation: accent-cycle 24s linear infinite; }
+  @keyframes accent-cycle {
+    0% { --accent: #ff9f1c; } 20% { --accent: #ff5d7a; } 40% { --accent: #a06bff; }
+    60% { --accent: #56a6ff; } 80% { --accent: #3ddc97; } to { --accent: #ff9f1c; }
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { background: transparent; color: var(--txt); font-family: "Segoe UI", Arial, sans-serif; overflow: hidden; }
@@ -107,6 +113,14 @@
     const nowBy = document.getElementById("nowBy");
     const rowsEl = document.getElementById("rows");
     const connEl = document.getElementById("conn");
+    const THEMES = { amber: "#ff9f1c", rose: "#ff5d7a", mint: "#3ddc97", violet: "#a06bff", blue: "#56a6ff" };
+
+    function applyTheme(id) {
+      const root = document.documentElement;
+      if (id === "rgb") { root.classList.add("rgb"); return; }
+      root.classList.remove("rgb");
+      if (THEMES[id]) root.style.setProperty("--accent", THEMES[id]);
+    }
 
     function render(music) {
       const q = Array.isArray(music?.queue) ? music.queue : [];
@@ -156,8 +170,9 @@
       ws.onmessage = (ev) => {
         let m;
         try { m = JSON.parse(ev.data); } catch { return; }
-        if (m.type === "init") render(m.music);
+        if (m.type === "init") { render(m.music); applyTheme(m.theme); }
         else if (m.type === "music") render(m.music);
+        else if (m.type === "theme" && m.id) applyTheme(m.id);
       };
       ws.onclose = retry;
       ws.onerror = () => { try { ws.close(); } catch {} };

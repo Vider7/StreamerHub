@@ -23,6 +23,9 @@ public sealed class WebSocketHub
     public bool TikTokConnected { get; private set; }
     public long TwitchViewers { get; private set; } = -1;
     public UpdateService? Updater { get; set; }
+    string _theme = "amber";
+    static readonly HashSet<string> ThemeIds = new(StringComparer.OrdinalIgnoreCase)
+        { "amber", "rose", "mint", "violet", "blue", "rgb" };
 
     public Action? ConfigApplied;
 
@@ -91,6 +94,16 @@ public sealed class WebSocketHub
                 {
                     var t = doc.RootElement.GetProperty("t").GetInt64();
                     await SendTo(ws, new { type = "pong", t });
+                    break;
+                }
+                case "theme":
+                {
+                    var id = doc.RootElement.TryGetProperty("id", out var tid) ? (tid.GetString() ?? "") : "";
+                    if (ThemeIds.Contains(id))
+                    {
+                        _theme = id.ToLowerInvariant();
+                        Broadcast(new { type = "theme", id = _theme });
+                    }
                     break;
                 }
                 case "play":
@@ -319,6 +332,7 @@ public sealed class WebSocketHub
     public object BuildInit() => new
     {
         type = "init",
+        theme = _theme,
         app = new
         {
             name = _cfg.AppName,

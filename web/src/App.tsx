@@ -92,6 +92,10 @@ export default function App() {
     document.documentElement.dataset.theme = theme;
   }, [theme]);
 
+  React.useEffect(() => {
+    if (state.connected) send({ type: "theme", id: theme });
+  }, [state.connected, theme]);
+
   const pickTheme = (t: string) => {
     setTheme(t);
     localStorage.setItem("sh.theme", t);

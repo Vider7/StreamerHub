@@ -128,7 +128,7 @@ Switch anytime in the gear menu. The accent follows the theme everywhere (live t
 
 ### Stream overlay
 
-Show the live queue on stream: add a browser source in OBS pointing at `http://127.0.0.1:51324/overlay.html`. Transparent background, current song plus what's queued.
+Show the live queue on stream: add a browser source in OBS pointing at `http://127.0.0.1:51324/overlay.html`. Transparent background, current song plus what's queued. It follows your dashboard theme automatically.
 
 ---
 
