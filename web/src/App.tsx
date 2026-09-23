@@ -5,6 +5,7 @@ import { fmt, fmtClock } from "./format";
 type StripDrag = { draggable: true; onDragStart: (e: React.DragEvent) => void; onDragEnd: (e: React.DragEvent) => void; title: string };
 
 let dragGhost: HTMLElement | null = null;
+let dragKind: "panel" | "queue" | null = null;
 
 function moveLayout(order: string, from: string, to: string): string {
   const cur = order.toUpperCase().split("");
@@ -31,6 +32,7 @@ export default function App() {
     draggable: true,
     title: "drag to reorder panel",
     onDragStart: (e) => {
+      dragKind = "panel";
       e.dataTransfer.setData("text/plain", letter);
       e.dataTransfer.effectAllowed = "move";
       if (dragGhost) {
@@ -54,6 +56,7 @@ export default function App() {
       e.dataTransfer.setDragImage(ghost, grabRect.left - panelRect.left + grabRect.width / 2, grabRect.height / 2);
     },
     onDragEnd: () => {
+      dragKind = null;
       if (dragGhost) {
         dragGhost.remove();
         dragGhost = null;
@@ -68,12 +71,14 @@ export default function App() {
   const dropProps = (letter: string) => ({
     "data-letter": letter,
     onDragOver: (e: React.DragEvent<HTMLElement>) => {
+      if (dragKind && dragKind !== "panel") return;
       e.preventDefault();
       e.dataTransfer.dropEffect = "move";
       if (over !== letter) setOver(letter);
     },
     onDragLeave: () => setOver((o) => (o === letter ? null : o)),
     onDrop: (e: React.DragEvent<HTMLElement>) => {
+      if (dragKind && dragKind !== "panel") return;
       e.preventDefault();
       const from = e.dataTransfer.getData("text/plain");
       setOver(null);
@@ -810,7 +815,7 @@ const QueueListM = React.memo(function QueueList({ music, send }: { music: Music
   const q = music?.queue ?? [];
   const [from, setFrom] = React.useState<number | null>(null);
   const [over, setOver] = React.useState<number | null>(null);
-  const finish = () => { setFrom(null); setOver(null); };
+  const finish = () => { dragKind = null; setFrom(null); setOver(null); };
   return (
     <div className="queuelist" onDragOver={(e) => e.preventDefault()} onDrop={(e) => {
       e.preventDefault();
@@ -821,8 +826,8 @@ const QueueListM = React.memo(function QueueList({ music, send }: { music: Music
       {q.map((t, i) => (
         <div className={"qrow" + (over === i ? " dropto" : "")} key={t.id + i}
           draggable
-          onDragStart={(e) => { setFrom(i); e.dataTransfer.setData("text/plain", String(i)); e.dataTransfer.effectAllowed = "move"; }}
-          onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; if (over !== i) setOver(i); }}
+          onDragStart={(e) => { dragKind = "queue"; setFrom(i); e.dataTransfer.setData("text/plain", String(i)); e.dataTransfer.effectAllowed = "move"; }}
+          onDragOver={(e) => { if (dragKind && dragKind !== "queue") return; e.preventDefault(); e.dataTransfer.dropEffect = "move"; if (over !== i) setOver(i); }}
           onDragEnd={finish}>
           <TrackThumb id={t.id} className="qart" alt="" />
           <span className="qidx mono">{i + 1}</span>
