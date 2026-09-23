@@ -596,6 +596,7 @@ function NowPlaying({ music, pos, send }: { music: Music | null; pos: { position
           <button className="play" onClick={() => send({ type: "pause", paused: playingRef.current })} aria-label="toggle play pause">
             {now && !playing ? <i className="fa-solid fa-play" aria-hidden="true" /> : <i className="fa-solid fa-pause" aria-hidden="true" />}
           </button>
+          <IconBtn title="skip to next" onClick={() => send({ type: "skip" })}><i className="fa-solid fa-forward-step" aria-hidden="true" /></IconBtn>
           {now && (
             <IconBtn className={"like" + (liked ? " liked" : "")} title={liked ? "undo like" : "like this song"} onClick={likeCurrent}>
               <i className={liked ? "fa-solid fa-heart" : "fa-regular fa-heart"} aria-hidden="true" />
@@ -606,7 +607,6 @@ function NowPlaying({ music, pos, send }: { music: Music | null; pos: { position
               <i className="fa-solid fa-ban" aria-hidden="true" />
             </IconBtn>
           )}
-          <IconBtn title="skip to next" onClick={() => send({ type: "skip" })}><i className="fa-solid fa-forward-step" aria-hidden="true" /></IconBtn>
         </div>
         <div className="volrow">
           <span className="vol-label">vol</span>
