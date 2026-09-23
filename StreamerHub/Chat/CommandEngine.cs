@@ -98,6 +98,12 @@ public sealed class CommandEngine
 
         if (verb != _cfg.Command.ToLowerInvariant()) return;
 
+        if (!_cfg.RequestsOpen)
+        {
+            Log.Info($"!sr closed, ignoring request from {username} [{platform}]");
+            return;
+        }
+
         var query = parts.Length > 1 ? parts[1].Trim() : "";
         if (query.Length == 0)
         {

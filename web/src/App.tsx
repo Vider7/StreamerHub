@@ -1103,6 +1103,23 @@ function SetupWizard({ account, app, send, onSkip }: { account: AccountInfo | nu
   );
 }
 
+function NumField({ id, value, onChange, min, max }: { id: string; value: string; onChange: (v: string) => void; min: number; max: number }) {
+  const step = (d: number) => {
+    const n = Math.floor(Number(value));
+    const base = Number.isFinite(n) ? n : min;
+    onChange(String(Math.min(max, Math.max(min, base + d))));
+  };
+  return (
+    <div className="numwrap">
+      <input id={id} className="text" inputMode="numeric" pattern="[0-9]*" value={value} onChange={(e) => onChange(e.target.value)} />
+      <div className="numspin" aria-hidden="true">
+        <button type="button" tabIndex={-1} onClick={() => step(1)}><i className="fa-solid fa-chevron-up" aria-hidden="true" /></button>
+        <button type="button" tabIndex={-1} onClick={() => step(-1)}><i className="fa-solid fa-chevron-down" aria-hidden="true" /></button>
+      </div>
+    </div>
+  );
+}
+
 function SettingsModal({ account, app, logs, logError, send, theme, onTheme, onClose }: {
   account: AccountInfo | null;
   app: AppInfo | null;
@@ -1125,8 +1142,7 @@ function SettingsModal({ account, app, logs, logError, send, theme, onTheme, onC
   const [maxQuery, setMaxQuery] = React.useState(String(app?.maxQueryLength ?? 100));
   const [rateLimit, setRateLimit] = React.useState(String(app?.rateLimitSeconds ?? 15));
   const [cooldown, setCooldown] = React.useState(String(app?.globalCooldownSeconds ?? 5));
-  const [defVol, setDefVol] = React.useState(String(app?.defaultVolume ?? 25));
-  const [radio, setRadio] = React.useState(app?.autoNextRadio ?? true);
+  const [requests, setRequests] = React.useState(app?.requestsOpen ?? true);
   const [err, setErr] = React.useState("");
 
   React.useEffect(() => {
@@ -1139,8 +1155,7 @@ function SettingsModal({ account, app, logs, logError, send, theme, onTheme, onC
       setMaxQuery(String(app.maxQueryLength ?? 100));
       setRateLimit(String(app.rateLimitSeconds ?? 15));
       setCooldown(String(app.globalCooldownSeconds ?? 5));
-      setDefVol(String(app.defaultVolume ?? 25));
-      setRadio(app.autoNextRadio ?? true);
+      setRequests(app.requestsOpen ?? true);
     }
   }, [account, app]);
 
@@ -1176,8 +1191,7 @@ function SettingsModal({ account, app, logs, logError, send, theme, onTheme, onC
       maxQueryLength: num(maxQuery, 100),
       rateLimitSeconds: num(rateLimit, 15),
       globalCooldownSeconds: num(cooldown, 5),
-      defaultVolume: num(defVol, 25),
-      autoNextRadio: radio,
+      requestsOpen: requests,
     });
   };
 
@@ -1247,40 +1261,35 @@ function SettingsModal({ account, app, logs, logError, send, theme, onTheme, onC
               </div>
               <div className="formrow">
                 <label className="field-label" htmlFor="st-maxmin">longest song (minutes)</label>
-                <input id="st-maxmin" className="text" type="number" min={1} max={60} value={maxMin} onChange={(e) => setMaxMin(e.target.value)} />
+                <NumField id="st-maxmin" value={maxMin} onChange={setMaxMin} min={1} max={60} />
                 <p className="hint">requests longer than this get skipped.</p>
               </div>
               <div className="formrow">
                 <label className="field-label" htmlFor="st-maxq">queue limit (songs)</label>
-                <input id="st-maxq" className="text" type="number" min={1} max={100} value={maxQ} onChange={(e) => setMaxQ(e.target.value)} />
+                <NumField id="st-maxq" value={maxQ} onChange={setMaxQ} min={1} max={100} />
                 <p className="hint">how many songs can wait in line.</p>
               </div>
               <div className="formrow">
                 <label className="field-label" htmlFor="st-rate">wait per viewer (seconds)</label>
-                <input id="st-rate" className="text" type="number" min={0} max={300} value={rateLimit} onChange={(e) => setRateLimit(e.target.value)} />
+                <NumField id="st-rate" value={rateLimit} onChange={setRateLimit} min={0} max={300} />
                 <p className="hint">how long one viewer waits between their own requests.</p>
               </div>
               <div className="formrow">
                 <label className="field-label" htmlFor="st-cool">wait between requests (seconds)</label>
-                <input id="st-cool" className="text" type="number" min={0} max={300} value={cooldown} onChange={(e) => setCooldown(e.target.value)} />
+                <NumField id="st-cool" value={cooldown} onChange={setCooldown} min={0} max={300} />
                 <p className="hint">breathing room between any two requests from chat.</p>
               </div>
               <div className="formrow">
                 <label className="field-label" htmlFor="st-maxquery">longest request text (characters)</label>
-                <input id="st-maxquery" className="text" type="number" min={1} max={200} value={maxQuery} onChange={(e) => setMaxQuery(e.target.value)} />
+                <NumField id="st-maxquery" value={maxQuery} onChange={setMaxQuery} min={1} max={200} />
                 <p className="hint">request text longer than this gets ignored.</p>
               </div>
               <div className="formrow">
-                <label className="field-label" htmlFor="st-defvol">start volume (0-100)</label>
-                <input id="st-defvol" className="text" type="number" min={0} max={100} value={defVol} onChange={(e) => setDefVol(e.target.value)} />
-                <p className="hint">how loud new songs start.</p>
-              </div>
-              <div className="formrow">
-                <span className="field-label">radio when empty</span>
-                <button className={"mini togg" + (radio ? " on" : "")} title="play a similar song when the queue runs out" onClick={() => setRadio((r) => !r)}>
-                  Radio {radio ? "on" : "off"}
+                <span className="field-label">accept requests</span>
+                <button className={"mini togg" + (requests ? " on" : "")} title="let viewers request songs" onClick={() => setRequests((r) => !r)}>
+                  Requests {requests ? "on" : "off"}
                 </button>
-                <p className="hint">when the queue runs out, play a similar song instead of stopping.</p>
+                <p className="hint">when off, song requests are ignored. mods can still skip.</p>
               </div>
               {err && <div className="form-err">{err}</div>}
               <div className="modal-actions">

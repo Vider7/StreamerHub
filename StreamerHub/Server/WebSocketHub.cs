@@ -285,6 +285,8 @@ public sealed class WebSocketHub
         _cfg.Music.DefaultVolume = ClampInt(root, "defaultVolume", _cfg.Music.DefaultVolume, 0, 100);
         if (root.TryGetProperty("autoNextRadio", out var radio) && (radio.ValueKind == JsonValueKind.True || radio.ValueKind == JsonValueKind.False))
             _cfg.Music.AutoNextRadio = radio.GetBoolean();
+        if (root.TryGetProperty("requestsOpen", out var req) && (req.ValueKind == JsonValueKind.True || req.ValueKind == JsonValueKind.False))
+            _cfg.Music.RequestsOpen = req.GetBoolean();
         _cfg.Save();
         ConfigApplied?.Invoke();
     }
@@ -378,6 +380,7 @@ public sealed class WebSocketHub
             rateLimitSeconds = _cfg.Music.RateLimitSeconds,
             globalCooldownSeconds = _cfg.Music.GlobalCooldownSeconds,
             autoNextRadio = _cfg.Music.AutoNextRadio,
+            requestsOpen = _cfg.Music.RequestsOpen,
             defaultVolume = _cfg.Music.DefaultVolume,
             tiktokUser = _cfg.TikTok.Username,
             twitchChannel = _cfg.Twitch.Channel,

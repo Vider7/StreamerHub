@@ -44,6 +44,7 @@ export type AppInfo = {
   rateLimitSeconds: number;
   globalCooldownSeconds: number;
   autoNextRadio: boolean;
+  requestsOpen: boolean;
   defaultVolume: number;
   tiktokUser: string;
   twitchChannel: string;

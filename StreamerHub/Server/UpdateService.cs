@@ -245,6 +245,8 @@ public sealed class UpdateService : IDisposable
         var failed = CopyTree(stage, appDir);
         if (failed > 0) Log.Warn("updater apply: " + failed + " file(s) could not be replaced");
 
+        DropStaleAssets(stage, appDir);
+
         var exe = Path.Combine(appDir, "StreamerHub.exe");
         if (File.Exists(exe))
         {
@@ -331,6 +333,27 @@ public sealed class UpdateService : IDisposable
         if (rel.StartsWith("logs" + sep, StringComparison.OrdinalIgnoreCase)) return true;
         if (rel.StartsWith("~updates" + sep, StringComparison.OrdinalIgnoreCase)) return true;
         return false;
+    }
+
+    static void DropStaleAssets(string stage, string appDir)
+    {
+        try
+        {
+            var stageAssets = Path.Combine(stage, "wwwroot", "assets");
+            var liveAssets = Path.Combine(appDir, "wwwroot", "assets");
+            if (!Directory.Exists(stageAssets) || !Directory.Exists(liveAssets)) return;
+            var fresh = new HashSet<string>(
+                Directory.EnumerateFiles(stageAssets).Select(Path.GetFileName)!,
+                StringComparer.OrdinalIgnoreCase);
+            foreach (var file in Directory.EnumerateFiles(liveAssets))
+            {
+                if (!fresh.Contains(Path.GetFileName(file)))
+                {
+                    try { File.Delete(file); } catch { }
+                }
+            }
+        }
+        catch { }
     }
 
     static int RankFile(string source, string file)
