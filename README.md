@@ -118,12 +118,12 @@ Viewers request songs with `!sr` plus a song name (links are rejected, names onl
 Switch anytime in the gear menu. The accent follows the theme everywhere (live tile, progress bar, update chip):
 
 <p>
-  <span style="color:#ff9f1c">●</span> amber&ensp;
-  <span style="color:#ff5d7a">●</span> rose&ensp;
-  <span style="color:#3ddc97">●</span> mint&ensp;
-  <span style="color:#a06bff">●</span> violet&ensp;
-  <span style="color:#56a6ff">●</span> blue&ensp;
-  <span style="color:#e7e4ec">●</span> rgb (cycles)
+  <img src="https://img.shields.io/badge/-amber-ff9f1c?style=flat-square" />
+  <img src="https://img.shields.io/badge/-rose-ff5d7a?style=flat-square" />
+  <img src="https://img.shields.io/badge/-mint-3ddc97?style=flat-square" />
+  <img src="https://img.shields.io/badge/-violet-a06bff?style=flat-square" />
+  <img src="https://img.shields.io/badge/-blue-56a6ff?style=flat-square" />
+  <img src="https://img.shields.io/badge/-rgb_cycles-8e8898?style=flat-square" />
 </p>
 
 ### Stream overlay
