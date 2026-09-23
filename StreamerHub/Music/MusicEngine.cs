@@ -226,6 +226,7 @@ public sealed class MusicEngine
         }
         StateChanged?.Invoke();
         BeginOrNext();
+        PrefetchNext();
         return "queued at #" + _queue.Count + ": " + result.Title;
     }
 
@@ -274,6 +275,19 @@ public sealed class MusicEngine
         _cfg.LastPlayed = ToLastPlayed(track, 0, true);
         StateChanged?.Invoke();
         Notice?.Invoke("playing: " + track.Title + (track.RequestedBy.Length > 0 ? " (by " + track.RequestedBy + ")" : ""));
+        PrefetchNext();
+    }
+
+    void PrefetchNext()
+    {
+        string? cur, next;
+        lock (_queue)
+        {
+            cur = NowPlaying?.Result.Id;
+            next = _queue.Count > 0 ? _queue[0].Result.Id : null;
+        }
+        if (!string.IsNullOrEmpty(next) && next != cur)
+            AudioCache.Prefetch(this, cur ?? "", next);
     }
 
     static LastPlayedState ToLastPlayed(Track track, double position, bool playing) => new()
@@ -437,6 +451,7 @@ public sealed class MusicEngine
             }
         }
         StateChanged?.Invoke();
+        PrefetchNext();
         return removed;
     }
 

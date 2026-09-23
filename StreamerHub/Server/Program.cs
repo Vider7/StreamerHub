@@ -30,6 +30,7 @@ internal static class Program
         }
 
         Log.Init(AppPaths.BaseDir);
+        AudioCache.Init();
         Log.Info("StreamerHub server starting");
 
         using var singleInstance = new Mutex(true, @"Global\StreamerHub.Server", out var createdNew);

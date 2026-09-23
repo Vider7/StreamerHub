@@ -11,6 +11,12 @@ public static class AudioStream
 
     public static async Task Handle(MusicEngine music, HttpContext ctx, string id)
     {
+        if (AudioCache.TryGet(id, out var cachedPath, out var cachedType))
+        {
+            Log.Info("serving precached audio for " + id);
+            await ServeFileAsync(ctx, cachedPath, cachedType);
+            return;
+        }
         var url = await ResolveAsync(music, id);
         if (url == null)
         {
@@ -55,6 +61,43 @@ public static class AudioStream
     }
 
     public static bool IsCached(string id) => Cache.ContainsKey(id);
+
+    static async Task ServeFileAsync(HttpContext ctx, string path, string? contentType)
+    {
+        var len = new FileInfo(path).Length;
+        var range = ctx.Request.Headers.Range.ToString();
+        long start = 0, end = len - 1;
+        var partial = false;
+        if (!string.IsNullOrEmpty(range) && range.StartsWith("bytes=", StringComparison.OrdinalIgnoreCase))
+        {
+            var spec = range.Substring(6).Split('-');
+            if (spec.Length == 2 && spec[0].Length > 0)
+            {
+                if (long.TryParse(spec[0], out var s)) start = Math.Max(0, s);
+                if (spec[1].Length > 0 && long.TryParse(spec[1], out var e)) end = e;
+                partial = true;
+            }
+        }
+        if (start >= len) { ctx.Response.StatusCode = 416; return; }
+        if (end >= len) end = len - 1;
+        var count = end - start + 1;
+        ctx.Response.StatusCode = partial ? 206 : 200;
+        ctx.Response.ContentType = string.IsNullOrEmpty(contentType) ? "audio/webm" : contentType;
+        ctx.Response.ContentLength = count;
+        if (partial) ctx.Response.Headers.ContentRange = $"bytes {start}-{end}/{len}";
+        ctx.Response.Headers.AcceptRanges = "bytes";
+        using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+        fs.Seek(start, SeekOrigin.Begin);
+        var buf = new byte[65536];
+        var left = count;
+        while (left > 0)
+        {
+            var n = await fs.ReadAsync(buf, 0, (int)Math.Min(buf.Length, left));
+            if (n <= 0) break;
+            await ctx.Response.Body.WriteAsync(buf, 0, n);
+            left -= n;
+        }
+    }
 
     public static async Task PrewarmAsync(MusicEngine music, string id)
     {
