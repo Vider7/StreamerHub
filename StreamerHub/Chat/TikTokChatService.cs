@@ -118,9 +118,9 @@ public sealed class TikTokChatService : IDisposable
                 var delta = streak - last;
                 var diamonds = cost * delta;
                 _streakTally[key] = streak;
+                _hub.AddStat(0, delta, diamonds, 0, 0, 0);
                 if (diamonds > 0)
                 {
-                    _hub.AddStat(0, delta, diamonds, 0, 0, 0);
                     _hub.Activity($"{name} sent {streak}x {gift}", "#FF9F1C", "gift");
                 }
                 Log.Info($"tiktok gift: {name} {gift} streak={streak} delta={delta} diamonds={diamonds}");
