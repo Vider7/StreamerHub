@@ -276,8 +276,35 @@ public sealed class WebSocketHub
             _cfg.Music.Command = (cmd.GetString() ?? "!sr").Trim();
         if (root.TryGetProperty("cookiesFile", out var cook) && cook.ValueKind == JsonValueKind.String)
             _cfg.Music.YtDlpCookiesFile = (cook.GetString() ?? "").Trim();
+        _cfg.Music.Command = ClampText(root, "musicCommand", _cfg.Music.Command, "!sr", 20);
+        _cfg.Music.MaxTrackMinutes = ClampInt(root, "maxTrackMinutes", _cfg.Music.MaxTrackMinutes, 1, 60);
+        _cfg.Music.MaxQueueLength = ClampInt(root, "maxQueueLength", _cfg.Music.MaxQueueLength, 1, 100);
+        _cfg.Music.MaxQueryLength = ClampInt(root, "maxQueryLength", _cfg.Music.MaxQueryLength, 1, 200);
+        _cfg.Music.RateLimitSeconds = ClampInt(root, "rateLimitSeconds", _cfg.Music.RateLimitSeconds, 0, 300);
+        _cfg.Music.GlobalCooldownSeconds = ClampInt(root, "globalCooldownSeconds", _cfg.Music.GlobalCooldownSeconds, 0, 300);
+        _cfg.Music.DefaultVolume = ClampInt(root, "defaultVolume", _cfg.Music.DefaultVolume, 0, 100);
+        if (root.TryGetProperty("autoNextRadio", out var radio) && (radio.ValueKind == JsonValueKind.True || radio.ValueKind == JsonValueKind.False))
+            _cfg.Music.AutoNextRadio = radio.GetBoolean();
         _cfg.Save();
         ConfigApplied?.Invoke();
+    }
+
+    static string ClampText(JsonElement root, string name, string current, string fallback, int maxLen)
+    {
+        if (root.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String)
+        {
+            var s = (v.GetString() ?? "").Trim();
+            if (s.Length == 0) return fallback;
+            return s.Length > maxLen ? s.Substring(0, maxLen) : s;
+        }
+        return current;
+    }
+
+    static int ClampInt(JsonElement root, string name, int current, int min, int max)
+    {
+        if (root.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Number)
+            return Math.Clamp(v.GetInt32(), min, max);
+        return current;
     }
 
     object BuildLogs(bool clear)
@@ -346,6 +373,12 @@ public sealed class WebSocketHub
             layout = _cfg.Layout,
             command = _cfg.Music.Command,
             maxTrackMinutes = _cfg.Music.MaxTrackMinutes,
+            maxQueueLength = _cfg.Music.MaxQueueLength,
+            maxQueryLength = _cfg.Music.MaxQueryLength,
+            rateLimitSeconds = _cfg.Music.RateLimitSeconds,
+            globalCooldownSeconds = _cfg.Music.GlobalCooldownSeconds,
+            autoNextRadio = _cfg.Music.AutoNextRadio,
+            defaultVolume = _cfg.Music.DefaultVolume,
             tiktokUser = _cfg.TikTok.Username,
             twitchChannel = _cfg.Twitch.Channel,
             volume = _cfg.Music.DefaultVolume,

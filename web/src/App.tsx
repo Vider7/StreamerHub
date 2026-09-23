@@ -1113,19 +1113,35 @@ function SettingsModal({ account, app, logs, logError, send, theme, onTheme, onC
   onTheme: (t: string) => void;
   onClose: () => void;
 }) {
-  const [tab, setTab] = React.useState<"themes" | "account" | "logs" | "credits">("themes");
+  const [tab, setTab] = React.useState<"themes" | "account" | "config" | "logs" | "credits">("themes");
   const [tw, setTw] = React.useState(account?.twitchChannel ?? "");
   const [tt, setTt] = React.useState(account?.tiktokUser ?? "");
   const [cid, setCid] = React.useState("");
   const [sec, setSec] = React.useState("");
   const [cmd, setCmd] = React.useState(app?.command ?? "!sr");
   const [cook, setCook] = React.useState("");
+  const [maxMin, setMaxMin] = React.useState(String(app?.maxTrackMinutes ?? 10));
+  const [maxQ, setMaxQ] = React.useState(String(app?.maxQueueLength ?? 20));
+  const [maxQuery, setMaxQuery] = React.useState(String(app?.maxQueryLength ?? 100));
+  const [rateLimit, setRateLimit] = React.useState(String(app?.rateLimitSeconds ?? 15));
+  const [cooldown, setCooldown] = React.useState(String(app?.globalCooldownSeconds ?? 5));
+  const [defVol, setDefVol] = React.useState(String(app?.defaultVolume ?? 25));
+  const [radio, setRadio] = React.useState(app?.autoNextRadio ?? true);
   const [err, setErr] = React.useState("");
 
   React.useEffect(() => {
     setTw(account?.twitchChannel ?? "");
     setTt(account?.tiktokUser ?? "");
     setCmd(app?.command ?? "!sr");
+    if (app) {
+      setMaxMin(String(app.maxTrackMinutes ?? 10));
+      setMaxQ(String(app.maxQueueLength ?? 20));
+      setMaxQuery(String(app.maxQueryLength ?? 100));
+      setRateLimit(String(app.rateLimitSeconds ?? 15));
+      setCooldown(String(app.globalCooldownSeconds ?? 5));
+      setDefVol(String(app.defaultVolume ?? 25));
+      setRadio(app.autoNextRadio ?? true);
+    }
   }, [account, app]);
 
   React.useEffect(() => {
@@ -1145,6 +1161,26 @@ function SettingsModal({ account, app, logs, logError, send, theme, onTheme, onC
     });
   };
 
+  const num = (s: string, fallback: number) => {
+    const n = Math.floor(Number(s));
+    return Number.isFinite(n) ? n : fallback;
+  };
+
+  const saveMusic = () => {
+    setErr("");
+    send({
+      type: "config",
+      musicCommand: cmd.trim(),
+      maxTrackMinutes: num(maxMin, 10),
+      maxQueueLength: num(maxQ, 20),
+      maxQueryLength: num(maxQuery, 100),
+      rateLimitSeconds: num(rateLimit, 15),
+      globalCooldownSeconds: num(cooldown, 5),
+      defaultVolume: num(defVol, 25),
+      autoNextRadio: radio,
+    });
+  };
+
   return (
     <>
       <div className="modal">
@@ -1153,7 +1189,7 @@ function SettingsModal({ account, app, logs, logError, send, theme, onTheme, onC
           <button className="modal-close" onClick={onClose} aria-label="close settings"><i className="fa-solid fa-xmark" aria-hidden="true" /></button>
         </div>
         <div className="tabs" role="tablist">
-          {(["themes", "account", "logs", "credits"] as const).map((t) => (
+          {(["themes", "account", "config", "logs", "credits"] as const).map((t) => (
             <button key={t} className={"tab" + (tab === t ? " on" : "") + (t === "credits" ? " right" : "")} onClick={() => setTab(t)} role="tab" aria-selected={tab === t}>
               {t}
             </button>
@@ -1199,6 +1235,56 @@ function SettingsModal({ account, app, logs, logError, send, theme, onTheme, onC
               {err && <div className="form-err">{err}</div>}
               <div className="modal-actions">
                 <button className="btn" onClick={save}>save account</button>
+              </div>
+            </>
+          )}
+          {tab === "config" && (
+            <>
+              <div className="formrow">
+                <label className="field-label" htmlFor="st-cmd2">request word</label>
+                <input id="st-cmd2" className="text" value={cmd} onChange={(e) => setCmd(e.target.value)} placeholder="!sr" />
+                <p className="hint">what viewers type in chat to request a song.</p>
+              </div>
+              <div className="formrow">
+                <label className="field-label" htmlFor="st-maxmin">longest song (minutes)</label>
+                <input id="st-maxmin" className="text" type="number" min={1} max={60} value={maxMin} onChange={(e) => setMaxMin(e.target.value)} />
+                <p className="hint">requests longer than this get skipped.</p>
+              </div>
+              <div className="formrow">
+                <label className="field-label" htmlFor="st-maxq">queue limit (songs)</label>
+                <input id="st-maxq" className="text" type="number" min={1} max={100} value={maxQ} onChange={(e) => setMaxQ(e.target.value)} />
+                <p className="hint">how many songs can wait in line.</p>
+              </div>
+              <div className="formrow">
+                <label className="field-label" htmlFor="st-rate">wait per viewer (seconds)</label>
+                <input id="st-rate" className="text" type="number" min={0} max={300} value={rateLimit} onChange={(e) => setRateLimit(e.target.value)} />
+                <p className="hint">how long one viewer waits between their own requests.</p>
+              </div>
+              <div className="formrow">
+                <label className="field-label" htmlFor="st-cool">wait between requests (seconds)</label>
+                <input id="st-cool" className="text" type="number" min={0} max={300} value={cooldown} onChange={(e) => setCooldown(e.target.value)} />
+                <p className="hint">breathing room between any two requests from chat.</p>
+              </div>
+              <div className="formrow">
+                <label className="field-label" htmlFor="st-maxquery">longest request text (characters)</label>
+                <input id="st-maxquery" className="text" type="number" min={1} max={200} value={maxQuery} onChange={(e) => setMaxQuery(e.target.value)} />
+                <p className="hint">request text longer than this gets ignored.</p>
+              </div>
+              <div className="formrow">
+                <label className="field-label" htmlFor="st-defvol">start volume (0-100)</label>
+                <input id="st-defvol" className="text" type="number" min={0} max={100} value={defVol} onChange={(e) => setDefVol(e.target.value)} />
+                <p className="hint">how loud new songs start.</p>
+              </div>
+              <div className="formrow">
+                <span className="field-label">radio when empty</span>
+                <button className={"mini togg" + (radio ? " on" : "")} title="play a similar song when the queue runs out" onClick={() => setRadio((r) => !r)}>
+                  Radio {radio ? "on" : "off"}
+                </button>
+                <p className="hint">when the queue runs out, play a similar song instead of stopping.</p>
+              </div>
+              {err && <div className="form-err">{err}</div>}
+              <div className="modal-actions">
+                <button className="btn" onClick={saveMusic}>save music settings</button>
               </div>
             </>
           )}

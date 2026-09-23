@@ -39,6 +39,12 @@ export type AppInfo = {
   layout: string;
   command: string;
   maxTrackMinutes: number;
+  maxQueueLength: number;
+  maxQueryLength: number;
+  rateLimitSeconds: number;
+  globalCooldownSeconds: number;
+  autoNextRadio: boolean;
+  defaultVolume: number;
   tiktokUser: string;
   twitchChannel: string;
   volume: number;
