@@ -1085,6 +1085,22 @@ input[type="range"].slider::-moz-range-thumb {
   background: rgba(235, 87, 87, 0.15);
 }
 
+.listhead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 2px 4px;
+}
+
+.listhead i {
+  font-size: 11px;
+  color: var(--accent);
+}
+
+.listhead .qx {
+  margin-left: auto;
+}
+
 /* clear chat, hold to confirm */
 
 .clear-btn {

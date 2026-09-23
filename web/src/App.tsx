@@ -505,10 +505,10 @@ function PanelMusic({ music, pos, send, appCommand, strip, results }: { music: M
         </button>
       </div>
       <NowPlaying music={music} pos={pos} send={send} />
-      {historyOpen && <HistoryListM history={music?.history ?? []} send={send} />}
-      {likedOpen && <LikedListM liked={music?.liked ?? []} send={send} />}
-      {blockedOpen && <BlockedListM blocked={music?.blocked ?? []} send={send} />}
-      {eqOpen && <EqRowM music={music} send={send} />}
+      {historyOpen && <HistoryListM history={music?.history ?? []} send={send} onClose={() => setHistoryOpen(false)} />}
+      {likedOpen && <LikedListM liked={music?.liked ?? []} send={send} onClose={() => setLikedOpen(false)} />}
+      {blockedOpen && <BlockedListM blocked={music?.blocked ?? []} send={send} onClose={() => setBlockedOpen(false)} />}
+      {eqOpen && <EqRowM music={music} send={send} onClose={() => setEqOpen(false)} />}
       <div className="section-label">up next</div>
       <QueueListM music={music} send={send} />
       <div className="section-label">find a track</div>
@@ -676,7 +676,7 @@ const EQ_PRESETS: { name: string; bands: number[] }[] = [
   { name: "Club", bands: [6, 5, 2, 0, -1, 0, 1, 2, 4, 4] },
 ];
 
-const EqRowM = React.memo(function EqRow({ music, send }: { music: Music | null; send: (m: Record<string, unknown>) => void }) {
+const EqRowM = React.memo(function EqRow({ music, send, onClose }: { music: Music | null; send: (m: Record<string, unknown>) => void; onClose: () => void }) {
   const [bands, setBands] = React.useState<number[]>(music?.eq?.length === 10 ? music.eq : DEFAULT_BANDS);
   const [loud, setLoud] = React.useState(music?.loudness ?? false);
   const timer = React.useRef<number | undefined>(undefined);
@@ -715,7 +715,9 @@ const EqRowM = React.memo(function EqRow({ music, send }: { music: Music | null;
   const activePreset = (p: number[]) => p.every((v, i) => v === bands[i]);
 
   return (
-    <div className="eq">
+    <div>
+      <ListHead icon="fa-solid fa-sliders" title="equalizer" count={10} onClose={onClose} />
+      <div className="eq">
       <div className="eqpresets">
         {EQ_PRESETS.map((p) => (
           <button key={p.name} className={"mini" + (activePreset(p.bands) ? " eqon" : "")} onClick={() => applyPreset(p.bands)}>
@@ -741,6 +743,7 @@ const EqRowM = React.memo(function EqRow({ music, send }: { music: Music | null;
         >
           AUTO {loud ? "on" : "off"}
         </button>
+      </div>
       </div>
     </div>
   );
@@ -849,9 +852,22 @@ function playTrack(send: (m: Record<string, unknown>) => void, t: Track) {
   send({ type: "play", id: t.id, title: t.title, channel: t.channel, duration: t.duration });
 }
 
-const HistoryListM = React.memo(function HistoryList({ history, send }: { history: Track[]; send: (m: Record<string, unknown>) => void }) {
+function ListHead({ icon, title, count, onClose }: { icon: string; title: string; count: number; onClose: () => void }) {
   return (
-    <div className="queuelist">
+    <div className="listhead">
+      <i className={icon} aria-hidden="true" />
+      <span className="strip-title">{title}</span>
+      <span className="strip-meta">{count}</span>
+      <button className="qx" onClick={onClose} aria-label={"close " + title} title="close"><i className="fa-solid fa-xmark" aria-hidden="true" /></button>
+    </div>
+  );
+}
+
+const HistoryListM = React.memo(function HistoryList({ history, send, onClose }: { history: Track[]; send: (m: Record<string, unknown>) => void; onClose: () => void }) {
+  return (
+    <div>
+      <ListHead icon="fa-solid fa-clock-rotate-left" title="history" count={history.length} onClose={onClose} />
+      <div className="queuelist">
       {history.map((t) => (
         <div className="qrow" key={t.id}>
           <TrackThumb id={t.id} className="qart" alt="" />
@@ -862,13 +878,16 @@ const HistoryListM = React.memo(function HistoryList({ history, send }: { histor
         </div>
       ))}
       {history.length === 0 && <div className="empty">no songs played yet</div>}
+      </div>
     </div>
   );
 });
 
-const LikedListM = React.memo(function LikedList({ liked, send }: { liked: Track[]; send: (m: Record<string, unknown>) => void }) {
+const LikedListM = React.memo(function LikedList({ liked, send, onClose }: { liked: Track[]; send: (m: Record<string, unknown>) => void; onClose: () => void }) {
   return (
-    <div className="queuelist">
+    <div>
+      <ListHead icon="fa-solid fa-heart" title="liked" count={liked.length} onClose={onClose} />
+      <div className="queuelist">
       {liked.map((t) => (
         <div className="qrow" key={t.id}>
           <TrackThumb id={t.id} className="qart" alt="" />
@@ -880,13 +899,16 @@ const LikedListM = React.memo(function LikedList({ liked, send }: { liked: Track
         </div>
       ))}
       {liked.length === 0 && <div className="empty">no liked songs yet</div>}
+      </div>
     </div>
   );
 });
 
-const BlockedListM = React.memo(function BlockedList({ blocked, send }: { blocked: Track[]; send: (m: Record<string, unknown>) => void }) {
+const BlockedListM = React.memo(function BlockedList({ blocked, send, onClose }: { blocked: Track[]; send: (m: Record<string, unknown>) => void; onClose: () => void }) {
   return (
-    <div className="queuelist">
+    <div>
+      <ListHead icon="fa-solid fa-ban" title="blocked" count={blocked.length} onClose={onClose} />
+      <div className="queuelist">
       {blocked.map((t) => (
         <div className="qrow" key={t.id}>
           <TrackThumb id={t.id} className="qart" alt="" />
@@ -897,6 +919,7 @@ const BlockedListM = React.memo(function BlockedList({ blocked, send }: { blocke
         </div>
       ))}
       {blocked.length === 0 && <div className="empty">no blocked songs</div>}
+      </div>
     </div>
   );
 });
