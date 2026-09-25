@@ -28,6 +28,7 @@ Everything your stream needs in one browser tab: chat from **Twitch** and **TikT
 | Feature | Description |
 |---|---|
 | **Both chats, one column** | Twitch and TikTok newest-on-top, with platform badges and a shield for mods |
+| **Faces + profiles** | Every chatter shows their profile picture (or an initial disc when none is found); click a name to open their Twitch/TikTok profile |
 | **Quiet bot** | Only song requests appear in the feed. Nothing is ever written to your Twitch or TikTok chat |
 | **Clear chat** | Hold the button (it fills as you hold) to wipe the on-screen feed |
 
@@ -45,7 +46,7 @@ Viewers, likes, gifts (with diamond value), follows, shares, joins. They update 
 | **Full transport** | Play, pause, previous, skip, volume, scrub bar (drag or arrow keys nudge 5s) |
 | **EQ & loudness** | Slim 10-band equalizer (plus Flat / Bass+ / Vocal / Club presets) and a loudness switch, both saved |
 | **Library lists** | History, liked, and blocked songs live under the player |
-| **Radio fallback** | When the queue runs out, one similar song plays, picked and preloaded before the current ends. Turn "radio off" to stop instead |
+| **Radio fallback** | When the queue runs out, a similar song plays, shuffled from the related mix (same artist won't loop) and preloaded before the current ends. Turn "radio off" to stop instead |
 
 ### Layout
 
@@ -185,7 +186,7 @@ Show the live queue on stream: add a browser source in OBS pointing at `http://1
 
 ### Twitch viewer count (optional, free)
 
-Chat works with no key at all; without one the dashboard just shows "viewer count off" for that tile. Want the number? Register an app at `https://dev.twitch.tv/console/apps`, paste its **Client ID** into `Twitch.ClientId` and **Client Secret** into `Twitch.ClientSecret`, save, reopen.
+Chat works with no key at all; without one the dashboard just shows "viewer count off" for that tile, and Twitch avatars load through a public fallback service. Want the number (plus direct Twitch profile pictures)? Register an app at `https://dev.twitch.tv/console/apps`, paste its **Client ID** into `Twitch.ClientId` and **Client Secret** into `Twitch.ClientSecret`, save, reopen.
 
 ### Putting the music on your stream
 
