@@ -247,6 +247,11 @@ public sealed class WebSocketHub
 
     async Task _execSearch(WebSocket ws, string q)
     {
+        if (string.IsNullOrWhiteSpace(q))
+        {
+            await SendTo(ws, new { type = "search", q = "", results = Array.Empty<object>() });
+            return;
+        }
         try
         {
             var results = await _music.SearchAsync(q);

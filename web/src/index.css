@@ -1006,8 +1006,15 @@ input[type="range"].slider::-moz-range-thumb {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  max-height: 160px;
   overflow-y: auto;
+}
+
+.queuelist {
+  max-height: 108px;
+}
+
+.resultlist {
+  max-height: 264px;
 }
 
 .qrow,

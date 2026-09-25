@@ -534,14 +534,10 @@ function PanelMusic({ music, pos, send, appCommand, strip, results }: { music: M
       {likedOpen && <LikedListM liked={music?.liked ?? []} send={send} onClose={() => setLikedOpen(false)} />}
       {blockedOpen && <BlockedListM blocked={music?.blocked ?? []} send={send} onClose={() => setBlockedOpen(false)} />}
       {eqOpen && <EqRowM music={music} send={send} onClose={() => setEqOpen(false)} />}
-      <div className="section-label">up next</div>
-      <QueueListM music={music} send={send} />
       <div className="section-label">find a track</div>
       <SearchBoxM send={send} results={results} />
-      <div className="section-label">chat request</div>
-      <p className="hint">
-        <span className="mono">{appCommand}</span> song name adds a track from chat
-      </p>
+      <div className="section-label">up next</div>
+      <QueueListM music={music} send={send} />
     </div>
   );
 }
@@ -967,6 +963,7 @@ const SearchBoxM = React.memo(function SearchBox({ send, results }: { send: (m: 
     send({ type: kind, id: r.id, title: r.title, channel: r.channel, duration: r.duration });
     lastSent.current = "";
     setQ("");
+    send({ type: "search", q: "" });
   };
 
   const searching = q.trim().length > 0 && results.length === 0 && settledFor.current !== q.trim();
@@ -986,6 +983,7 @@ const SearchBoxM = React.memo(function SearchBox({ send, results }: { send: (m: 
             if (t.current) window.clearTimeout(t.current);
             if (text.length === 0) {
               lastSent.current = "";
+              send({ type: "search", q: "" });
               return;
             }
             t.current = window.setTimeout(() => {
@@ -993,7 +991,7 @@ const SearchBoxM = React.memo(function SearchBox({ send, results }: { send: (m: 
                 lastSent.current = text;
                 runSearch(text);
               }
-            }, 350);
+            }, 250);
           }}
           onKeyDown={(e) => {
             if (e.key === "Enter" && q.trim()) {
