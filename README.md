@@ -196,6 +196,16 @@ Show the live queue on stream: add a browser source in OBS pointing at `http://1
 
 Chat works with no key at all; without one the dashboard just shows "viewer count off" for that tile, and Twitch avatars load through a public fallback service. Want the number (plus direct Twitch profile pictures)? Register an app at `https://dev.twitch.tv/console/apps`, paste its **Client ID** into `Twitch.ClientId` and **Client Secret** into `Twitch.ClientSecret`, save, reopen.
 
+### Faster song resolves (optional, free)
+
+Out of the box every song resolves through yt-dlp, which takes a few seconds. Skip that wait by giving the app YouTube's own public player key:
+
+1. Open `https://www.youtube.com` in your browser and view the page source (`Ctrl+U`).
+2. Search for `INNERTUBE_API_KEY` and copy the `AIza...` value right after it (same public key for everyone, no account needed).
+3. Paste it into `YoutubeApiKey` in `Config.json`, save, reopen.
+
+Songs then resolve in about half a second. If the key ever stops working, the app quietly falls back to yt-dlp.
+
 ### Putting the music on your stream
 
 1. Play a song once (so the background player is running).
