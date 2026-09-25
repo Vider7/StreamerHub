@@ -169,6 +169,7 @@ Show the live queue on stream: add a browser source in OBS pointing at `http://1
     "Command": "!sr",               // the word in chat that requests a song
     "YtDlpPath": "",                // leave empty to use the yt-dlp in tools
     "YtDlpCookiesFile": "",         // optional: full path to a cookies.txt if YouTube blocks searches
+    "YoutubeApiKey": "",            // optional: YouTube player API key for faster song resolves (falls back to yt-dlp when empty)
     "DefaultVolume": 25,            // how loud new songs start
     "MaxTrackMinutes": 10,          // longest song a request can be
     "MaxQueueLength": 20,           // song line limit

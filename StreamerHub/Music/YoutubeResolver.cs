@@ -133,13 +133,18 @@ public sealed class YoutubeResolver
     async Task<string?> ResolveAudioUrlCoreAsync(string id, CancellationToken ct)
     {
         // Fast path: one direct player-API call (~0.5s) instead of a full
-        // yt-dlp run (seconds). Falls back to yt-dlp on any failure.
-        try
+        // yt-dlp run (seconds). Needs Music.YoutubeApiKey in config;
+        // falls back to yt-dlp when unset or on any failure.
+        var apiKey = (_cfg.YoutubeApiKey ?? "").Trim();
+        if (apiKey.Length > 0)
         {
-            var fast = await ResolveViaPlayerApiAsync(id);
-            if (!string.IsNullOrEmpty(fast)) return fast;
+            try
+            {
+                var fast = await ResolveViaPlayerApiAsync(id, apiKey);
+                if (!string.IsNullOrEmpty(fast)) return fast;
+            }
+            catch { }
         }
-        catch { }
         var args = new List<string> { "--no-playlist", "-f", "bestaudio/best", "-g", "https://www.youtube.com/watch?v=" + id };
         AddAuthArgs(args);
         var (code, stdout, stderr) = await RunAsync(args, 120, ct);
@@ -153,9 +158,8 @@ public sealed class YoutubeResolver
     }
 
     static readonly HttpClient YtApi = new() { Timeout = TimeSpan.FromSeconds(6) };
-    const string YtApiKey = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8";
 
-    static async Task<string?> ResolveViaPlayerApiAsync(string id)
+    static async Task<string?> ResolveViaPlayerApiAsync(string id, string apiKey)
     {
         var body = JsonSerializer.Serialize(new
         {
@@ -165,7 +169,7 @@ public sealed class YoutubeResolver
             contentCheckOk = true,
         });
         using var req = new HttpRequestMessage(HttpMethod.Post,
-            "https://www.youtube.com/youtubei/v1/player?key=" + YtApiKey + "&prettyPrint=false");
+            "https://www.youtube.com/youtubei/v1/player?key=" + Uri.EscapeDataString(apiKey) + "&prettyPrint=false");
         req.Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json");
         using var resp = await YtApi.SendAsync(req);
         if (!resp.IsSuccessStatusCode) return null;

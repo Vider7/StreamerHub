@@ -23,6 +23,7 @@ public sealed class MusicConfig
     public string Command { get; set; } = "!sr";
     public string YtDlpPath { get; set; } = "";
     public string YtDlpCookiesFile { get; set; } = "";
+    public string YoutubeApiKey { get; set; } = "";
     public int DefaultVolume { get; set; } = 25;
     public int MaxTrackMinutes { get; set; } = 10;
     public int MaxQueueLength { get; set; } = 20;
