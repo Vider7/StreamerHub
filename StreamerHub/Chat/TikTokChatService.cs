@@ -99,7 +99,8 @@ public sealed class TikTokChatService : IDisposable
             if (e.UserIdentity?.IsSubscriberOfHost == true && badge.Length == 0)
                 Log.Info($"tiktok fanclub: {user} is subscribed but sent no usable badge");
             if (!string.IsNullOrWhiteSpace(msg))
-                _hub.Message(ChatPlatform.TikTok, user, msg.Trim(), isMod, isBroad, badge, club, level);
+                _hub.Message(ChatPlatform.TikTok, user, msg.Trim(), isMod, isBroad, badge, club, level,
+                    ChatAvatars.TikTokAvatar(e.Sender), ChatAvatars.TikTokProfileUrl(user));
         };
         c.OnGiftMessage += (t, e) =>
         {

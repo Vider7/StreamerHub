@@ -23,6 +23,8 @@ export type ChatEntry = {
   fanclubBadge?: string;
   fanclubName?: string;
   fanclubLevel?: number;
+  avatar?: string;
+  profileUrl?: string;
   _k?: number;
 };
 
@@ -259,6 +261,20 @@ export function useHub() {
           const e = msg.entry as ChatEntry;
           if (!e) break;
           setState((s) => ({ ...s, chat: [...s.chat.slice(-599), { ...e, _k: chatSeq++ }] }));
+          break;
+        }
+        case "chat-avatar": {
+          const platform = msg.platform as string;
+          const user = (msg.user as string ?? "").toLowerCase();
+          const avatar = msg.avatar as string;
+          if (!platform || !user || !avatar) break;
+          setState((s) => ({
+            ...s,
+            chat: s.chat.map((c) =>
+              c.platform === platform && (c.user ?? "").toLowerCase() === user && !c.avatar
+                ? { ...c, avatar }
+                : c),
+          }));
           break;
         }
         case "chat-clear":

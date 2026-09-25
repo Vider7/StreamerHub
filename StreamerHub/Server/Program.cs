@@ -10,6 +10,7 @@ internal static class Program
     static AppConfig _cfg = new();
     static ChatHub? _hub;
     static TwitchChatService? _twitch;
+    static TwitchAvatarService? _avatars;
     static TikTokChatService? _tiktok;
     static TwitchStatsService? _stats;
     static MusicEngine? _music;
@@ -49,7 +50,8 @@ internal static class Program
         var resolver = new YoutubeResolver(_cfg.Music);
         var music = new MusicEngine(_cfg.Music, resolver);
         music.PersistRequested += () => _cfg.Save();
-        var twitch = new TwitchChatService(_cfg, hub);
+        var avatars = new TwitchAvatarService(_cfg);
+        var twitch = new TwitchChatService(_cfg, hub, avatars);
         var tiktok = new TikTokChatService(_cfg, hub);
         var stats = new TwitchStatsService(_cfg);
 
@@ -61,6 +63,7 @@ internal static class Program
 
         _hub = hub;
         _music = music;
+        _avatars = avatars;
         _twitch = twitch;
         _tiktok = tiktok;
         _stats = stats;
@@ -84,6 +87,8 @@ internal static class Program
         };
 
         hub.MessageAdded += ws.PublishChat;
+        avatars.AvatarResolved += (platform, user, url) => hub.SetAvatar(platform, user, url);
+        hub.AvatarChanged += ws.PublishAvatar;
         hub.StatsChanged += ws.PublishStats;
         hub.ActivityAdded += ws.PublishActivity;
         music.StateChanged += () => SyncMusic();
@@ -290,6 +295,7 @@ internal static class Program
         try { CaptureLastPlayed(); } catch { }
         try { _cfg.Save(); } catch { }
         try { _twitch?.Stop(); } catch { }
+        try { _avatars?.Dispose(); } catch { }
         try { _tiktok?.Stop(); } catch { }
         try { _stats?.Stop(); } catch { }
         try { _mpv?.Dispose(); } catch { }

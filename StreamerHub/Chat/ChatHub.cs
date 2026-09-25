@@ -35,6 +35,7 @@ public sealed class ChatHub
     public long Joins { get; private set; }
 
     public event Action<ChatEntry>? MessageAdded;
+    public event Action<ChatPlatform, string, string>? AvatarChanged;
     public event Action? MessagesReset;
     public event Action? StatsChanged;
     public event Action<ActivityEntry>? ActivityAdded;
@@ -45,7 +46,8 @@ public sealed class ChatHub
     }
 
     public void Message(ChatPlatform platform, string username, string message, bool isMod = false, bool isBroadcaster = false,
-        string fanclubBadge = "", string fanclubName = "", int fanclubLevel = 0)
+        string fanclubBadge = "", string fanclubName = "", int fanclubLevel = 0,
+        string avatarUrl = "", string profileUrl = "")
     {
         var entry = new ChatEntry
         {
@@ -61,6 +63,8 @@ public sealed class ChatHub
             FanclubBadge = fanclubBadge,
             FanclubName = fanclubName,
             FanclubLevel = fanclubLevel,
+            AvatarUrl = avatarUrl,
+            ProfileUrl = profileUrl,
         };
         lock (_gate)
         {
@@ -80,6 +84,26 @@ public sealed class ChatHub
         }
         MessageAdded?.Invoke(entry);
         StatsChanged?.Invoke();
+    }
+
+    public bool SetAvatar(ChatPlatform platform, string username, string avatarUrl)
+    {
+        if (string.IsNullOrWhiteSpace(avatarUrl)) return false;
+        var any = false;
+        lock (_gate)
+        {
+            foreach (var m in _messages)
+            {
+                if (m.Platform == platform && m.AvatarUrl.Length == 0 &&
+                    string.Equals(m.Username, username, StringComparison.OrdinalIgnoreCase))
+                {
+                    m.AvatarUrl = avatarUrl;
+                    any = true;
+                }
+            }
+        }
+        if (any) AvatarChanged?.Invoke(platform, username, avatarUrl);
+        return any;
     }
 
     public void Bot(string text)

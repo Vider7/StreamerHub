@@ -7,6 +7,7 @@ public sealed class TwitchChatService : IDisposable
 {
     readonly AppConfig _cfg;
     readonly ChatHub _hub;
+    readonly TwitchAvatarService? _avatars;
     TwitchClient? _client;
     string _channel = "";
     string _username = "";
@@ -15,10 +16,11 @@ public sealed class TwitchChatService : IDisposable
 
     public event Action<bool, string>? ConnectionChanged;
 
-    public TwitchChatService(AppConfig cfg, ChatHub hub)
+    public TwitchChatService(AppConfig cfg, ChatHub hub, TwitchAvatarService? avatars = null)
     {
         _cfg = cfg;
         _hub = hub;
+        _avatars = avatars;
     }
 
     public void Start()
@@ -128,8 +130,16 @@ public sealed class TwitchChatService : IDisposable
     {
         var m = e.ChatMessage;
         if (string.IsNullOrEmpty(m.Username) || m.Message == null) return;
+        var login = m.Username.Trim().ToLowerInvariant();
+        var avatar = _avatars?.GetCached(login) ?? "";
+        if (avatar.Length == 0)
+        {
+            if (_avatars?.HasCredentials == true) _avatars.Request(login);
+            else avatar = ChatAvatars.TwitchAvatarFallback(login);
+        }
         _hub.Message(ChatPlatform.Twitch, m.Username, m.Message.Trim(),
-            m.IsModerator || m.IsBroadcaster, m.IsBroadcaster);
+            m.IsModerator || m.IsBroadcaster, m.IsBroadcaster,
+            "", "", 0, avatar, ChatAvatars.TwitchProfileUrl(login));
     }
 
     public void Send(string text)

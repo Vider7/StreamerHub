@@ -393,6 +393,25 @@ function ClearChat({ send, msg = "chat-clear", action, label = "Clear", done = "
 
 function ChatRow({ e }: { e: any }) {
   const tag = e.role === "bot" ? "BOT" : e.tag;
+  const who = (
+    <>
+      {e.avatar ? (
+        <img
+          className="chatpfp"
+          src={e.avatar}
+          alt=""
+          loading="lazy"
+          referrerPolicy="no-referrer"
+          onError={(ev) => { (ev.currentTarget as HTMLImageElement).style.display = "none"; }}
+        />
+      ) : null}
+      <span className="user" style={{ color: e.color }}>
+        {(e.isMod || e.isBroad) && <i className="fa-solid fa-shield-halved modmark" aria-hidden="true" />}
+        {e.fanclubBadge ? <img className="fanbadge" src={e.fanclubBadge} alt="" title={e.fanclubName ? e.fanclubName + (e.fanclubLevel > 0 ? " lv" + e.fanclubLevel : "") : "fanclub"} onError={(ev) => { (ev.currentTarget as HTMLImageElement).style.display = "none"; }} /> : null}
+        {e.user}
+      </span>
+    </>
+  );
   return (
     <div className={"crow " + (e.role === "bot" ? "bot" : "")}>
       <span className="ctime">{e.time}</span>
@@ -404,11 +423,11 @@ function ChatRow({ e }: { e: any }) {
       ) : (
         <>
           <span className={"tag " + (e.tag === "TW" ? "tw" : "tt")}>{tag}</span>
-          <span className="user" style={{ color: e.color }}>
-            {(e.isMod || e.isBroad) && <i className="fa-solid fa-shield-halved modmark" aria-hidden="true" />}
-            {e.fanclubBadge ? <img className="fanbadge" src={e.fanclubBadge} alt="" title={e.fanclubName ? e.fanclubName + (e.fanclubLevel > 0 ? " lv" + e.fanclubLevel : "") : "fanclub"} onError={(ev) => { (ev.currentTarget as HTMLImageElement).style.display = "none"; }} /> : null}
-            {e.user}
-          </span>
+          {e.profileUrl ? (
+            <a className="who" href={e.profileUrl} target="_blank" rel="noreferrer" title={"open " + e.user + " profile"}>
+              {who}
+            </a>
+          ) : who}
           <span className="msg">{e.msg}</span>
         </>
       )}

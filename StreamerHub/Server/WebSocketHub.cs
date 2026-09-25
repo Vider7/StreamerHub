@@ -497,7 +497,17 @@ public sealed class WebSocketHub
         fanclubBadge = e.FanclubBadge,
         fanclubName = e.FanclubName,
         fanclubLevel = e.FanclubLevel,
+        avatar = e.AvatarUrl,
+        profileUrl = e.ProfileUrl,
     };
+
+    public void PublishAvatar(ChatPlatform platform, string user, string avatarUrl) => Broadcast(new
+    {
+        type = "chat-avatar",
+        platform = platform.ToString().ToLowerInvariant(),
+        user,
+        avatar = avatarUrl,
+    });
 
     static object ActivityDto(ActivityEntry e) => new
     {

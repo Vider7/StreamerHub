@@ -18,6 +18,8 @@ public sealed class ChatEntry
     public string FanclubBadge { get; init; } = "";
     public string FanclubName { get; init; } = "";
     public int FanclubLevel { get; init; }
+    public string AvatarUrl { get; set; } = "";
+    public string ProfileUrl { get; init; } = "";
 }
 
 public sealed class TrackResult
