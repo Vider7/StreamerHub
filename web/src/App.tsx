@@ -274,6 +274,13 @@ const PanelChatM = React.memo(function PanelChat({ chat, activity, strip, send }
   const endSplit = () => {
     dragSplit.current = null;
   };
+  const [trPop, setTrPop] = React.useState<{ x: number; y: number; text: string } | null>(null);
+  const onChatMenu = (e: React.MouseEvent) => {
+    const sel = (window.getSelection()?.toString() ?? "").trim();
+    if (sel.length === 0) return;
+    e.preventDefault();
+    setTrPop({ x: e.clientX, y: e.clientY, text: sel.slice(0, 500) });
+  };
   return (
     <div className="panel-inner" ref={wrapRef}>
       <div className="strip" {...strip}>
@@ -282,11 +289,19 @@ const PanelChatM = React.memo(function PanelChat({ chat, activity, strip, send }
         <span className="strip-meta">{chat.length} shown</span>
         <ClearChat send={send} />
       </div>
-      <div className="chatlist" style={{ flex: `1 1 ${split}%` }}>
+      <div className="chatlist" style={{ flex: `1 1 ${split}%` }} onContextMenu={onChatMenu}>
         {rows.map((e) => (
           <ChatRow key={e._k ?? e.time + e.msg} e={e} />
         ))}
         {rows.length === 0 && <div className="empty">no messages yet</div>}
+        {trPop && (
+          <TranslatePop
+            x={trPop.x}
+            y={trPop.y}
+            text={trPop.text}
+            onClose={() => setTrPop(null)}
+          />
+        )}
       </div>
       <div className="chatsplit" role="separator" aria-orientation="horizontal" aria-label="resize activity feed" title="drag to resize activity"
         onPointerDown={onSplitDown} onPointerMove={onSplitMove} onPointerUp={endSplit} onPointerCancel={endSplit} />
@@ -388,6 +403,62 @@ function ClearChat({ send, msg = "chat-clear", action, label = "Clear", done = "
       <span className="clear-label">{flash ? done : label}</span>
       <span className="holdbar" aria-hidden="true" />
     </button>
+  );
+}
+
+function TranslatePop({ x, y, text, onClose }: { x: number; y: number; text: string; onClose: () => void }) {
+  const [phase, setPhase] = React.useState<"ask" | "loading" | "done" | "error">("ask");
+  const [out, setOut] = React.useState("");
+  const [src, setSrc] = React.useState("");
+  const ref = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    const down = (e: PointerEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    };
+    const key = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("pointerdown", down);
+    window.addEventListener("keydown", key);
+    return () => {
+      window.removeEventListener("pointerdown", down);
+      window.removeEventListener("keydown", key);
+    };
+  }, [onClose]);
+
+  const run = () => {
+    setPhase("loading");
+    fetch("/api/translate?q=" + encodeURIComponent(text))
+      .then(async (r) => {
+        if (!r.ok) throw new Error("bad");
+        const j = await r.json();
+        setOut((j.text as string) ?? "");
+        setSrc((j.source as string) ?? "");
+        setPhase("done");
+      })
+      .catch(() => setPhase("error"));
+  };
+
+  return (
+    <div
+      ref={ref}
+      className="trpop"
+      style={{ left: Math.max(8, Math.min(x, window.innerWidth - 330)), top: Math.max(8, Math.min(y, window.innerHeight - 150)) }}
+    >
+      <div className="trorig">{text.length > 120 ? text.slice(0, 120) + "..." : text}</div>
+      {phase === "ask" && (
+        <button className="mini accent" onClick={run}>translate to english</button>
+      )}
+      {phase === "loading" && <span className="trsrc">translating...</span>}
+      {phase === "error" && <span className="trsrc">translation failed</span>}
+      {phase === "done" && (
+        <>
+          <div className="trtext">{out}</div>
+          <div className="trsrc">{src && src !== "en" ? "from " + src : "already english"}</div>
+        </>
+      )}
+    </div>
   );
 }
 

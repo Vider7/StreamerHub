@@ -237,6 +237,7 @@ internal static class Program
         app.MapGet("/api/health", () => Results.Ok(new { ok = true, name = _cfg.AppName }));
         app.MapGet("/api/stream/{id}", (HttpContext ctx, string id) => AudioStream.Handle(music, ctx, id));
         app.MapGet("/api/thumb/{id}", (HttpContext ctx, string id) => ThumbStream.Handle(ctx, id));
+        app.MapGet("/api/translate", (HttpContext ctx, string? q, string? to) => Translate.Handle(ctx, q, to));
         app.UseDefaultFiles();
         app.UseStaticFiles();
 
