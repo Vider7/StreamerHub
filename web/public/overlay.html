@@ -84,21 +84,9 @@
     background: rgba(10, 10, 12, 0.45);
     border-radius: 6px;
   }
-  #conn {
-    position: fixed;
-    top: 6px;
-    right: 8px;
-    width: 9px;
-    height: 9px;
-    border-radius: 50%;
-    background: #35c26b;
-    box-shadow: 0 0 0 1px rgba(0,0,0,.4);
-  }
-  #conn.off { background: #ff5b5b; }
 </style>
 </head>
 <body>
-  <div id="conn" class="off"></div>
   <div id="wrap">
     <div class="now" id="now">
       <span class="ndot"></span>
@@ -112,7 +100,6 @@
     const nowTitle = document.getElementById("nowTitle");
     const nowBy = document.getElementById("nowBy");
     const rowsEl = document.getElementById("rows");
-    const connEl = document.getElementById("conn");
     const THEMES = { amber: "#ff9f1c", rose: "#ff5d7a", mint: "#3ddc97", violet: "#a06bff", blue: "#56a6ff" };
 
     function applyTheme(id) {
@@ -162,11 +149,9 @@
     }
 
     function connect() {
-      connEl.classList.add("off");
       let ws;
       try { ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws"); }
       catch { return retry(); }
-      ws.onopen = () => connEl.classList.remove("off");
       ws.onmessage = (ev) => {
         let m;
         try { m = JSON.parse(ev.data); } catch { return; }
@@ -178,7 +163,6 @@
       ws.onerror = () => { try { ws.close(); } catch {} };
     }
     function retry() {
-      connEl.classList.add("off");
       setTimeout(connect, 2500);
     }
     connect();
