@@ -393,18 +393,24 @@ function ClearChat({ send, msg = "chat-clear", action, label = "Clear", done = "
 
 function ChatRow({ e }: { e: any }) {
   const tag = e.role === "bot" ? "BOT" : e.tag;
+  const [imgOk, setImgOk] = React.useState(true);
+  React.useEffect(() => { setImgOk(true); }, [e.avatar]);
   const who = (
     <>
-      {e.avatar ? (
+      {e.avatar && imgOk ? (
         <img
           className="chatpfp"
           src={e.avatar}
           alt=""
           loading="lazy"
           referrerPolicy="no-referrer"
-          onError={(ev) => { (ev.currentTarget as HTMLImageElement).style.display = "none"; }}
+          onError={() => setImgOk(false)}
         />
-      ) : null}
+      ) : (
+        <span className="chatpfp fallback" style={{ background: e.color || undefined }} title={e.user}>
+          {(e.user || "?").charAt(0).toUpperCase()}
+        </span>
+      )}
       <span className="user" style={{ color: e.color }}>
         {(e.isMod || e.isBroad) && <i className="fa-solid fa-shield-halved modmark" aria-hidden="true" />}
         {e.fanclubBadge ? <img className="fanbadge" src={e.fanclubBadge} alt="" title={e.fanclubName ? e.fanclubName + (e.fanclubLevel > 0 ? " lv" + e.fanclubLevel : "") : "fanclub"} onError={(ev) => { (ev.currentTarget as HTMLImageElement).style.display = "none"; }} /> : null}
