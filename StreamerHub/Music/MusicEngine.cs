@@ -282,15 +282,16 @@ public sealed class MusicEngine
 
     void PrefetchNext()
     {
-        string? cur, next;
+        string? cur;
+        List<string> upcoming;
         lock (_queue)
         {
             cur = NowPlaying?.Result.Id;
-            next = _queue.Count > 0 ? _queue[0].Result.Id : null;
+            upcoming = _queue.Take(3).Select(t => t.Result.Id).ToList();
         }
-        if (!string.IsNullOrEmpty(next) && next != cur)
+        if (upcoming.Count > 0)
         {
-            AudioCache.Prefetch(this, cur ?? "", next);
+            AudioCache.PrefetchMany(this, cur ?? "", upcoming);
             return;
         }
         if (cur != null) StartRadioEarlyFill();
@@ -503,16 +504,17 @@ public sealed class MusicEngine
         _ = Task.Run(() => FillRadioEarlyAsync(cur));
     }
 
-    async Task FillRadioEarlyAsync(string anchor)
+    async Task FillRadioEarlyAsync(string currentId)
     {
         try
         {
+            var anchor = PickRadioAnchor(currentId);
             var found = await _resolver.SearchRelatedAsync(anchor);
             var pick = PickRadioTrack(found, anchor);
             if (pick == null) return;
             lock (_queue)
             {
-                if (NowPlaying?.Result.Id != anchor) return;
+                if (NowPlaying?.Result.Id != currentId) return;
                 if (_queue.Any(q => q.Result.Id == pick.Result.Id)) return;
                 _queue.Add(pick);
             }
@@ -538,10 +540,30 @@ public sealed class MusicEngine
         }
     }
 
+    string PickRadioAnchor(string fallback)
+    {
+        // Sometimes seed the related-mix from an older played song instead of
+        // always the current one, so radio wanders instead of looping one cluster.
+        lock (_queue)
+        {
+            if (_history.Count >= 4 && Random.Shared.NextDouble() < 0.4)
+            {
+                var pool = _history.TakeLast(8).ToList();
+                if (pool.Count > 0)
+                {
+                    var id = pool[Random.Shared.Next(pool.Count)].Result.Id;
+                    if (!string.IsNullOrEmpty(id) && id != fallback) return id;
+                }
+            }
+        }
+        return fallback;
+    }
+
     Track? PickRadioTrack(List<TrackResult> found, string anchor)
     {
         List<string> seenTitles;
         HashSet<string> used;
+        HashSet<string> recentChannels;
         lock (_queue)
         {
             seenTitles = new List<string>();
@@ -551,7 +573,13 @@ public sealed class MusicEngine
             used = new HashSet<string>();
             foreach (var h in _history) used.Add(h.Result.Id);
             foreach (var q in _queue) used.Add(q.Result.Id);
+            recentChannels = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var h in _history.TakeLast(2))
+                if (!string.IsNullOrWhiteSpace(h.Result.Channel)) recentChannels.Add(h.Result.Channel.Trim());
+            if (NowPlaying != null && !string.IsNullOrWhiteSpace(NowPlaying.Result.Channel))
+                recentChannels.Add(NowPlaying.Result.Channel.Trim());
         }
+        var eligible = new List<TrackResult>();
         foreach (var r in found)
         {
             if (r.Duration <= 0 || r.Duration > _cfg.MaxTrackMinutes * 60.0) continue;
@@ -559,9 +587,16 @@ public sealed class MusicEngine
             if (rn.Length == 0) continue;
             var dup = seenTitles.Any(t => t == rn || t.Contains(rn, StringComparison.Ordinal) || rn.Contains(t, StringComparison.Ordinal));
             if (r.Id == anchor || used.Contains(r.Id) || dup || IsBlocked(r.Id)) continue;
-            return new Track { Result = r, RequestedBy = "radio", RequestedPlatform = null };
+            eligible.Add(r);
         }
-        return null;
+        if (eligible.Count == 0) return null;
+        // Shuffle: random pick, de-prioritizing the same artist as recent plays
+        // so it can still appear, just not over and over.
+        var varied = eligible.Where(r =>
+            string.IsNullOrWhiteSpace(r.Channel) || !recentChannels.Contains(r.Channel.Trim())).ToList();
+        var pool = varied.Count > 0 ? varied : eligible;
+        var winner = pool[Random.Shared.Next(pool.Count)];
+        return new Track { Result = winner, RequestedBy = "radio", RequestedPlatform = null };
     }
 
     async Task FillRadioAsync()
@@ -581,6 +616,7 @@ public sealed class MusicEngine
             lock (_queue) _radioBusy = false;
             return;
         }
+        anchor = PickRadioAnchor(anchor);
         try
         {
             var found = await _resolver.SearchRelatedAsync(anchor);

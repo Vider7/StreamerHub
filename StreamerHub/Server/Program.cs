@@ -98,10 +98,16 @@ internal static class Program
         void PrewarmNext()
         {
             var ids = new List<string>();
+            // The just-skipped-to track first: its live /api/stream resolve
+            // runs the moment playback starts, so warm its URL before the
+            // queued ones. With resolve dedup this joins the in-flight run
+            // instead of spawning another yt-dlp.
+            var now = music.NowPlaying?.Result.Id;
+            if (!string.IsNullOrEmpty(now) && !AudioStream.IsCached(now)) ids.Add(now);
             foreach (var q in music.QueueSnapshot)
             {
-                if (ids.Count >= 3) break;
-                if (!AudioStream.IsCached(q.Result.Id) && q.Result.Id != mpv.CurrentId) ids.Add(q.Result.Id);
+                if (ids.Count >= 4) break;
+                if (!AudioStream.IsCached(q.Result.Id) && q.Result.Id != mpv.CurrentId && !ids.Contains(q.Result.Id)) ids.Add(q.Result.Id);
             }
             foreach (var id in ids)
             {

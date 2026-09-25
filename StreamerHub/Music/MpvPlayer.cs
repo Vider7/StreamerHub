@@ -106,7 +106,13 @@ public sealed class MpvPlayer : IDisposable
 
     public static string BuildAf(double[] eq, bool loudness)
     {
-        var chain = loudness ? "loudnorm=I=-14:TP=-1.5:LRA=20," : "";
+        // Gentle static leveling: slow attack/release so gain never audibly
+        // pumps on sparse material (single-pass loudnorm breathed). Makeup is
+        // fixed, so quiet passages are lifted without swelling; the limiter
+        // only catches peaks transparently.
+        var chain = loudness
+            ? "acompressor=threshold=-21dB:ratio=2:attack=250:release=1500:makeup=3dB,alimiter=limit=0.891:attack=7:release=100,"
+            : "";
         int[] freqs = { 31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000 };
         for (var i = 0; i < freqs.Length; i++)
         {

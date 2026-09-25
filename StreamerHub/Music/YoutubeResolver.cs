@@ -83,7 +83,7 @@ public sealed class YoutubeResolver
 
     async Task<List<TrackResult>> RunSearchAsync(string query)
     {
-        var args = new List<string> { "--no-warnings", "--flat-playlist", "-J", "ytsearch10:" + query };
+        var args = new List<string> { "--no-warnings", "--flat-playlist", "-J", "ytsearch15:" + query };
         AddAuthArgs(args);
         var (code, stdout, stderr) = await RunAsync(args, 60, CancellationToken.None);
         if (code != 0)
@@ -115,8 +115,31 @@ public sealed class YoutubeResolver
         }
     }
 
-    public async Task<string?> ResolveAudioUrlAsync(string id, CancellationToken ct = default)
+    readonly ConcurrentDictionary<string, Task<string?>> _resolveInflight = new();
+
+    public Task<string?> ResolveAudioUrlAsync(string id, CancellationToken ct = default)
     {
+        // Rapid skips fire playback + precache + prewarm resolves for the same
+        // id at once; share one yt-dlp run instead of racing duplicates.
+        if (ct.CanBeCanceled)
+            return ResolveAudioUrlCoreAsync(id, ct);
+        var task = _resolveInflight.GetOrAdd(id, key =>
+            ResolveAudioUrlCoreAsync(key, CancellationToken.None));
+        task.ContinueWith(_ => _resolveInflight.TryRemove(new KeyValuePair<string, Task<string?>>(id, task)),
+            TaskContinuationOptions.ExecuteSynchronously);
+        return task;
+    }
+
+    async Task<string?> ResolveAudioUrlCoreAsync(string id, CancellationToken ct)
+    {
+        // Fast path: one direct player-API call (~0.5s) instead of a full
+        // yt-dlp run (seconds). Falls back to yt-dlp on any failure.
+        try
+        {
+            var fast = await ResolveViaPlayerApiAsync(id);
+            if (!string.IsNullOrEmpty(fast)) return fast;
+        }
+        catch { }
         var args = new List<string> { "--no-playlist", "-f", "bestaudio/best", "-g", "https://www.youtube.com/watch?v=" + id };
         AddAuthArgs(args);
         var (code, stdout, stderr) = await RunAsync(args, 120, ct);
@@ -129,11 +152,45 @@ public sealed class YoutubeResolver
         return string.IsNullOrEmpty(first) ? null : first;
     }
 
+    static readonly HttpClient YtApi = new() { Timeout = TimeSpan.FromSeconds(6) };
+    const string YtApiKey = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8";
+
+    static async Task<string?> ResolveViaPlayerApiAsync(string id)
+    {
+        var body = JsonSerializer.Serialize(new
+        {
+            context = new { client = new { clientName = "ANDROID", clientVersion = "19.09.37", androidSdkVersion = 30 } },
+            videoId = id,
+            racyCheckOk = true,
+            contentCheckOk = true,
+        });
+        using var req = new HttpRequestMessage(HttpMethod.Post,
+            "https://www.youtube.com/youtubei/v1/player?key=" + YtApiKey + "&prettyPrint=false");
+        req.Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json");
+        using var resp = await YtApi.SendAsync(req);
+        if (!resp.IsSuccessStatusCode) return null;
+        using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
+        if (!doc.RootElement.TryGetProperty("streamingData", out var sd)) return null;
+        if (!sd.TryGetProperty("adaptiveFormats", out var formats)) return null;
+        string? best = null;
+        long bestRate = -1;
+        foreach (var f in formats.EnumerateArray())
+        {
+            var mime = f.TryGetProperty("mimeType", out var m) ? (m.GetString() ?? "") : "";
+            if (!mime.StartsWith("audio/", StringComparison.OrdinalIgnoreCase)) continue;
+            var url = f.TryGetProperty("url", out var u) ? (u.GetString() ?? "") : "";
+            if (string.IsNullOrEmpty(url)) continue;
+            var rate = f.TryGetProperty("bitrate", out var b) && b.ValueKind == JsonValueKind.Number ? b.GetInt64() : 0;
+            if (rate > bestRate) { bestRate = rate; best = url; }
+        }
+        return best;
+    }
+
     public async Task<List<TrackResult>> SearchRelatedAsync(string id, CancellationToken ct = default)
     {
         var args = new List<string>
         {
-            "--no-warnings", "--flat-playlist", "--playlist-end", "60", "-J",
+            "--no-warnings", "--flat-playlist", "--playlist-end", "30", "-J",
             "https://www.youtube.com/watch?v=" + id + "&list=RD" + id,
         };
         AddAuthArgs(args);

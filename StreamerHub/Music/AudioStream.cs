@@ -17,6 +17,27 @@ public static class AudioStream
             await ServeFileAsync(ctx, cachedPath, cachedType);
             return;
         }
+        // A skip just landed on a track whose download is already running:
+        // play the growing local file instead of opening a second, slower
+        // live stream. Ranged (seek) requests still use the live path since
+        // the tail may not have those bytes yet.
+        var rangeHeader = ctx.Request.Headers.Range.ToString();
+        if (string.IsNullOrEmpty(rangeHeader) && AudioCache.TryGetActive(id, out var partialPath, out var partialType))
+        {
+            var gotBytes = await WaitForBytesAsync(partialPath, 256 * 1024, TimeSpan.FromSeconds(6));
+            if (AudioCache.TryGet(id, out cachedPath, out cachedType))
+            {
+                Log.Info("serving just-precached audio for " + id);
+                await ServeFileAsync(ctx, cachedPath, cachedType);
+                return;
+            }
+            if (gotBytes)
+            {
+                Log.Info("serving partial precache for " + id);
+                await ServePartialAsync(ctx, partialPath, partialType);
+                return;
+            }
+        }
         var url = await ResolveAsync(music, id);
         if (url == null)
         {
@@ -61,6 +82,57 @@ public static class AudioStream
     }
 
     public static bool IsCached(string id) => Cache.ContainsKey(id);
+
+    static async Task<bool> WaitForBytesAsync(string path, long minBytes, TimeSpan timeout)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < deadline)
+        {
+            try
+            {
+                if (new FileInfo(path).Length >= minBytes) return true;
+            }
+            catch { }
+            await Task.Delay(200);
+        }
+        try { return new FileInfo(path).Length > 0; }
+        catch { return false; }
+    }
+
+    static async Task ServePartialAsync(HttpContext ctx, string path, string? contentType)
+    {
+        // No content-length: chunked. mpv plays this fine; duration resolves
+        // at EOF. Aborts if the download stalls with no progress.
+        ctx.Response.StatusCode = 200;
+        ctx.Response.ContentType = string.IsNullOrEmpty(contentType) ? "audio/webm" : contentType;
+        var ct = ctx.RequestAborted;
+        using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        var buf = new byte[65536];
+        var idleSince = DateTime.UtcNow;
+        while (!ct.IsCancellationRequested)
+        {
+            int n;
+            try { n = await fs.ReadAsync(buf, 0, buf.Length, ct); }
+            catch (OperationCanceledException) { break; }
+            if (n > 0)
+            {
+                try { await ctx.Response.Body.WriteAsync(buf, 0, n, ct); }
+                catch { break; }
+                idleSince = DateTime.UtcNow;
+                continue;
+            }
+            long len;
+            try { len = new FileInfo(path).Length; }
+            catch { break; }
+            if (fs.Position >= len && !AudioCache.IsPrefetching(Path.GetFileNameWithoutExtension(path)))
+                break; // download finished, we reached EOF
+            if (fs.Position >= len && AudioCache.TryGet(Path.GetFileNameWithoutExtension(path), out _, out _))
+                break; // completed while serving; reader holds the full file
+            if (DateTime.UtcNow - idleSince > TimeSpan.FromSeconds(15)) break;
+            try { await Task.Delay(250, ct); }
+            catch (OperationCanceledException) { break; }
+        }
+    }
 
     static async Task ServeFileAsync(HttpContext ctx, string path, string? contentType)
     {
