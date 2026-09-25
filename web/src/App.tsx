@@ -791,6 +791,14 @@ function PanelMusic({ music, pos, send, appCommand, strip, results }: { music: M
           {"Radio " + (music?.radio ? "On" : "Off")}
         </button>
         <button
+          className={"mini" + (music?.crossfade ? " accent" : "")}
+          title="fade the end of each song out and the next one in"
+          aria-pressed={!!music?.crossfade}
+          onClick={() => send({ type: "crossfade", on: !music?.crossfade })}
+        >
+          {"Xfade " + (music?.crossfade ? "On" : "Off")}
+        </button>
+        <button
           className={"mini" + (historyOpen ? " accent" : "")}
           title="recently played songs"
           aria-pressed={historyOpen}

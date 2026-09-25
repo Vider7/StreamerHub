@@ -81,9 +81,17 @@ public static class AudioCache
             wanted.Add(id);
         }
         Evict(keep);
+        // Abort downloads for tracks that are no longer wanted (e.g. the
+        // removed song) so they stop eating bandwidth.
+        foreach (var id in Inflight.Keys)
+        {
+            if (!keep.Contains(id))
+                Gens.AddOrUpdate(id, 1, (_, g) => g + 1);
+        }
         foreach (var id in wanted)
         {
             if (TryGet(id, out _, out _)) continue;
+            if (Inflight.ContainsKey(id)) continue; // already downloading, leave it alone
             var gen = Gens.AddOrUpdate(id, 1, (_, g) => g + 1);
             Inflight.TryAdd(id, 0);
             _ = Task.Run(() => PrefetchCoreAsync(music, id, gen));
@@ -103,6 +111,14 @@ public static class AudioCache
         {
             if (!GenAlive(nextId, gen)) return;
             var url = await music.ResolveAudioUrlAsync(nextId);
+            if (url == null)
+            {
+                // One retry: the shared resolve may have died with a stale
+                // task (e.g. right after a skip/remove reshuffle).
+                await Task.Delay(TimeSpan.FromSeconds(5));
+                if (!GenAlive(nextId, gen) || TryGet(nextId, out _, out _)) return;
+                url = await music.ResolveAudioUrlAsync(nextId);
+            }
             if (url == null || !GenAlive(nextId, gen)) return;
             using var req = new HttpRequestMessage(HttpMethod.Get, url);
             req.Headers.Add("User-Agent", UA);

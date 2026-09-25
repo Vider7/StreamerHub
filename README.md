@@ -43,6 +43,7 @@ Viewers, likes, gifts (with diamond value), follows, shares, joins. They update 
 | **Viewer requests** | Viewers type `!sr song name` in chat, the song lands in the queue and plays |
 | **Background player** | Music runs in mpv, its own app with its own sound — capture it in OBS as a normal channel |
 | **Keeps playing** | Close the tab or the browser and it keeps going; reopen and it shows exactly where it is |
+| **Crossfade** | Each song fades out over the last seconds and the next fades in (toggle Xfade; length in `Music.CrossfadeSeconds`) |
 | **Full transport** | Play, pause, previous, skip, volume, scrub bar (drag or arrow keys nudge 5s) |
 | **EQ & loudness** | Slim 10-band equalizer (plus Flat / Bass+ / Vocal / Club presets) and a loudness switch, both saved |
 | **Library lists** | History, liked, and blocked songs live under the player |

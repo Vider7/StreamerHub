@@ -39,6 +39,11 @@ public sealed class WebSocketHub
 
     public Action? ConfigApplied;
 
+    public Func<MpvPlayer?>? ActivePlayer;
+    public Action<bool>? PauseAll;
+
+
+
     public WebSocketHub(AppConfig cfg, ChatHub hub, MusicEngine music, MpvPlayer mpv)
     {
         _cfg = cfg;
@@ -146,13 +151,14 @@ public sealed class WebSocketHub
                 case "pause":
                 {
                     var paused = doc.RootElement.GetProperty("paused").GetBoolean();
-                    _mpv.SetPause(paused);
+                    if (PauseAll != null) PauseAll(paused);
+                    else ActivePlayer?.Invoke()?.SetPause(paused);
                     break;
                 }
                 case "seek":
                 {
                     var position = doc.RootElement.GetProperty("position").GetDouble();
-                    _mpv.Seek(position);
+                    ActivePlayer?.Invoke()?.Seek(position);
                     break;
                 }
                 case "remove":
@@ -173,7 +179,7 @@ public sealed class WebSocketHub
                     var v = doc.RootElement.GetProperty("value").GetInt32();
                     _cfg.Music.DefaultVolume = Math.Clamp(v, 0, 100);
                     _cfg.Save();
-                    _mpv.SetVolume(v);
+                    (ActivePlayer?.Invoke() ?? _mpv).SetVolume(v);
                     break;
                 }
                 case "like":
@@ -192,7 +198,7 @@ public sealed class WebSocketHub
                     {
                         _cfg.Music.Equalizer = bands;
                         _cfg.Save();
-                        _mpv.SetAf(MpvPlayer.BuildAf(_cfg.Music.Equalizer, _cfg.Music.Loudness));
+                        SetAfAll(AfNow());
                     }
                     break;
                 }
@@ -200,7 +206,15 @@ public sealed class WebSocketHub
                 {
                     _cfg.Music.Loudness = doc.RootElement.GetProperty("on").GetBoolean();
                     _cfg.Save();
-                    _mpv.SetAf(MpvPlayer.BuildAf(_cfg.Music.Equalizer, _cfg.Music.Loudness));
+                    SetAfAll(AfNow());
+                    break;
+                }
+                case "crossfade":
+                {
+                    _cfg.Music.Crossfade = doc.RootElement.GetProperty("on").GetBoolean();
+                    _cfg.Save();
+                    SetAfAll(AfNow());
+                    Broadcast(new { type = "crossfade", on = _cfg.Music.Crossfade });
                     break;
                 }
                 case "chat-clear":
@@ -361,6 +375,23 @@ public sealed class WebSocketHub
         }
         catch { }
         return new { type = "logs", lines = tail, error = (string?)null };
+    }
+
+    string AfNow()
+    {
+        // Global chain carries fade-in only; fade-out is baked per track at load.
+        var fade = _cfg.Music.Crossfade
+            ? Math.Clamp(_cfg.Music.CrossfadeSeconds <= 0 ? 4 : _cfg.Music.CrossfadeSeconds, 0.5, 10)
+            : 0;
+        return MpvPlayer.BuildAf(_cfg.Music.Equalizer, _cfg.Music.Loudness, fade, -1);
+    }
+
+    public MpvPlayer? Mpv2 { get; set; }
+
+    void SetAfAll(string af)
+    {
+        _mpv.SetAf(af);
+        Mpv2?.SetAf(af);
     }
 
     static double[]? ReadDoubles(JsonElement root, string name)
@@ -582,6 +613,7 @@ public sealed class WebSocketHub
                 position = _music.Position,
                 playing = _music.Playing,
                 radio = _cfg.Music.AutoNextRadio,
+                crossfade = _cfg.Music.Crossfade,
                 eq = _cfg.Music.Equalizer,
                 loudness = _cfg.Music.Loudness,
             };

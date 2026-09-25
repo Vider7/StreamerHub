@@ -9,7 +9,7 @@ namespace StreamerHub;
 
 public sealed class MpvPlayer : IDisposable
 {
-    const string IpcName = "streamerhub-mpv";
+    readonly string _ipcName;
 
     [DllImport("kernel32.dll", SetLastError = true)]
     static extern bool PeekNamedPipe(SafeHandle hPipe, byte[]? lpBuffer, uint nBufferSize, out uint lpBytesRead, out uint lpTotalBytesAvail, out uint lpBytesLeftThisMessage);
@@ -66,6 +66,7 @@ public sealed class MpvPlayer : IDisposable
     volatile bool _pauseRequested;
     int? _pendingVolume;
     volatile string? _pendingAf;
+    volatile string? _pendingTrackAf;
     volatile bool _pendingStop;
     volatile bool _inTrack;
     volatile bool _startPlaying = true;
@@ -84,10 +85,11 @@ public sealed class MpvPlayer : IDisposable
     public bool Paused { get; private set; }
     public double Duration { get; private set; }
 
-    public MpvPlayer(string exe, string device)
+    public MpvPlayer(string exe, string device, string ipcName = "streamerhub-mpv")
     {
         _exe = exe;
         _device = device ?? "";
+        _ipcName = string.IsNullOrWhiteSpace(ipcName) ? "streamerhub-mpv" : ipcName;
     }
 
     public static string Locate(string configured, string fallbackExe)
@@ -104,15 +106,25 @@ public sealed class MpvPlayer : IDisposable
         return fallbackExe;
     }
 
-    public static string BuildAf(double[] eq, bool loudness)
+    public static string BuildAf(double[] eq, bool loudness, double fadeSecs = 0, double fadeOutStartSecs = -1)
     {
+        // Sample-accurate crossfade pair, baked per track: the loader swells
+        // in from 0, the ender swells out at its own duration. No volume
+        // commands, no zipper noise, pause/seek safe (position-bound).
+        var inv = CultureInfo.InvariantCulture;
+        var chain = fadeSecs > 0
+            ? "afade=t=in:st=0:d=" + fadeSecs.ToString("0.0", inv) + ","
+            : "";
         // Gentle static leveling: slow attack/release so gain never audibly
         // pumps on sparse material (single-pass loudnorm breathed). Makeup is
         // fixed, so quiet passages are lifted without swelling; the limiter
         // only catches peaks transparently.
-        var chain = loudness
+        chain += loudness
             ? "acompressor=threshold=-21dB:ratio=2:attack=250:release=1500:makeup=3dB,alimiter=limit=0.891:attack=7:release=100,"
             : "";
+        if (fadeSecs > 0 && fadeOutStartSecs >= 0)
+            chain += "afade=t=out:st=" + fadeOutStartSecs.ToString("0.0", inv)
+                + ":d=" + fadeSecs.ToString("0.0", inv) + ",";
         int[] freqs = { 31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000 };
         for (var i = 0; i < freqs.Length; i++)
         {
@@ -124,11 +136,11 @@ public sealed class MpvPlayer : IDisposable
         return "lavfi=[" + chain + "]";
     }
 
-    public bool Start(int volume, string af)
+    public bool Start(int volume, string af, bool killStale = true)
     {
         _volume = Math.Max(0, Math.Min(100, volume));
         _af = af ?? "";
-        KillStaleMpv();
+        if (killStale) KillStaleMpv();
         for (var attempt = 1; attempt <= 3; attempt++)
         {
             try
@@ -170,7 +182,7 @@ public sealed class MpvPlayer : IDisposable
         psi.ArgumentList.Add("--input-media-keys=no");
         psi.ArgumentList.Add("--volume=" + _volume);
         if (_device.Length > 0) psi.ArgumentList.Add("--audio-device=" + _device);
-        psi.ArgumentList.Add("--input-ipc-server=" + @"\\.\pipe\" + IpcName);
+        psi.ArgumentList.Add("--input-ipc-server=" + @"\\.\pipe\" + _ipcName);
 
         try
         {
@@ -190,7 +202,7 @@ public sealed class MpvPlayer : IDisposable
         {
             try
             {
-                var p = new NamedPipeClientStream(".", IpcName, PipeDirection.InOut);
+                var p = new NamedPipeClientStream(".", _ipcName, PipeDirection.InOut);
                 p.Connect(250);
                 pipe = p;
             }
@@ -285,16 +297,17 @@ public sealed class MpvPlayer : IDisposable
         _wake.Set();
     }
 
-    public void Play(string? streamUrl) => PlayCore(streamUrl, true);
+    public void Play(string? streamUrl, string? afForTrack = null) => PlayCore(streamUrl, true, afForTrack);
 
     public void RetryPlay(string? streamUrl) => PlayCore(streamUrl, false);
 
-    void PlayCore(string? streamUrl, bool resetGuard)
+    void PlayCore(string? streamUrl, bool resetGuard, string? afForTrack = null)
     {
         if (!_available) return;
         _lastUrl = string.IsNullOrEmpty(streamUrl) ? null : streamUrl;
         _lastResume = null;
         _startPlaying = true;
+        if (!string.IsNullOrEmpty(afForTrack)) _pendingTrackAf = afForTrack;
         if (resetGuard)
         {
             _fastFailTries = 0;
@@ -311,10 +324,11 @@ public sealed class MpvPlayer : IDisposable
         _wake.Set();
     }
 
-    public void Resume(string? streamUrl, double position, bool playing)
+    public void Resume(string? streamUrl, double position, bool playing, string? afForTrack = null)
     {
         if (!_available) return;
         _lastUrl = string.IsNullOrEmpty(streamUrl) ? null : streamUrl;
+        if (!string.IsNullOrEmpty(afForTrack)) _pendingTrackAf = afForTrack;
         _lastResume = position.ToString("0.###", CultureInfo.InvariantCulture);
         _startPlaying = playing;
         _fastFailTries = 0;
@@ -703,6 +717,16 @@ public sealed class MpvPlayer : IDisposable
         try
         {
             if (string.IsNullOrEmpty(url)) return;
+            if (_pendingTrackAf is { } taf)
+            {
+                _pendingTrackAf = null;
+                if (taf != _af)
+                {
+                    _af = taf;
+                    try { Command("set_property", "af", taf); }
+                    catch (Exception ex) { Log.Warn("af apply failed: " + ex.Message); }
+                }
+            }
             Command("loadfile", url, "replace");
             _loadedAtUtc = DateTime.UtcNow;
             _expectingStop = true;

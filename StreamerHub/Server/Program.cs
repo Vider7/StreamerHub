@@ -18,6 +18,11 @@ internal static class Program
     static UpdateService? _updater;
     static double _lastPos;
     static bool _lastPaused;
+    static MpvPlayer? _mpvB;
+    static MpvPlayer? _active;
+    static MpvPlayer? _fading;
+    static string? _overlapId;
+    static bool _overlapSetup;
     static string? _resolvingId;
     static double _resumeSeek;
     static bool _resumePlaying = true;
@@ -56,7 +61,12 @@ internal static class Program
         var stats = new TwitchStatsService(_cfg);
 
         var mpv = new MpvPlayer(MpvPlayer.Locate(_cfg.Music.MpvPath, "mpv"), _cfg.Music.AudioDevice);
-        var mpvOk = mpv.Start(_cfg.Music.DefaultVolume, MpvPlayer.BuildAf(_cfg.Music.Equalizer, _cfg.Music.Loudness));
+        var af0 = MpvPlayer.BuildAf(_cfg.Music.Equalizer, _cfg.Music.Loudness,
+            _cfg.Music.Crossfade ? Math.Clamp(_cfg.Music.CrossfadeSeconds <= 0 ? 4 : _cfg.Music.CrossfadeSeconds, 0.5, 10) : 0, -1);
+        var mpvOk = mpv.Start(_cfg.Music.DefaultVolume, af0);
+        var mpvB = new MpvPlayer(MpvPlayer.Locate(_cfg.Music.MpvPath, "mpv"), _cfg.Music.AudioDevice, "streamerhub-mpv-b");
+        var mpvBOk = mpvOk && mpvB.Start(_cfg.Music.DefaultVolume, af0, killStale: false);
+        if (!mpvBOk) Log.Warn("mpv second player unavailable; crossfade falls back to fade-out only");
         var ws = new WebSocketHub(_cfg, hub, music, mpv);
         var updater = new UpdateService(_cfg.Updater, m => ws.Broadcast(m));
         ws.Updater = updater;
@@ -64,6 +74,15 @@ internal static class Program
         _hub = hub;
         _music = music;
         _avatars = avatars;
+        _active = mpv;
+        if (mpvBOk) _mpvB = mpvB;
+        ws.Mpv2 = _mpvB;
+        ws.ActivePlayer = () => _active;
+        ws.PauseAll = p =>
+        {
+            try { _active?.SetPause(p); } catch { }
+            try { _fading?.SetPause(p); } catch { }
+        };
         _twitch = twitch;
         _tiktok = tiktok;
         _stats = stats;
@@ -107,7 +126,7 @@ internal static class Program
             foreach (var q in music.QueueSnapshot)
             {
                 if (ids.Count >= 4) break;
-                if (!AudioStream.IsCached(q.Result.Id) && q.Result.Id != mpv.CurrentId && !ids.Contains(q.Result.Id)) ids.Add(q.Result.Id);
+                if (!AudioStream.IsCached(q.Result.Id) && q.Result.Id != _active?.CurrentId && !ids.Contains(q.Result.Id)) ids.Add(q.Result.Id);
             }
             foreach (var id in ids)
             {
@@ -128,10 +147,14 @@ internal static class Program
         music.Notice += m => Log.Info("music: " + m);
         stats.Notice += m => Log.Info("stats: " + m);
         RestoreLastPlayed(music, mpv);
-        mpv.Ended += () => music.OnClientEnded();
-        mpv.Failed += () => music.OnClientFailed();
-        mpv.Retrying += RetryResolve;
+        mpv.Ended += () => ActiveEnded(mpv);
+        mpv.Failed += () => ActiveFailed(mpv);
+        mpv.Retrying += () => ActiveRetrying(mpv);
         mpv.PositionChanged += SyncMpv;
+        mpvB.Ended += () => ActiveEnded(mpvB);
+        mpvB.Failed += () => ActiveFailed(mpvB);
+        mpvB.Retrying += () => ActiveRetrying(mpvB);
+        mpvB.PositionChanged += SyncMpv;
         twitch.ConnectionChanged += (ok, detail) => ws.SetConn(ChatPlatform.Twitch, ok, detail);
         tiktok.ConnectionChanged += (ok, detail) => ws.SetConn(ChatPlatform.TikTok, ok, detail);
         stats.ViewerCountChanged += ws.SetTwitchViewers;
@@ -139,27 +162,82 @@ internal static class Program
         void SyncMusic()
         {
             ws.PublishMusic();
-            if (!mpv.Available) return;
+            var active = _active;
+            if (active == null || !active.Available) return;
             var now = music.NowPlaying;
+            if (_overlapSetup) return;
             if (now == null)
             {
-                if (mpv.CurrentId != null)
+                EndOverlap();
+                if (active.CurrentId != null)
                 {
-                    mpv.CurrentId = null;
-                    mpv.StopAudio();
+                    active.CurrentId = null;
+                    active.StopAudio();
                 }
                 return;
             }
-            if (mpv.CurrentId != now.Result.Id)
+            if (_fading != null && now.Result.Id == _overlapId) return;
+            if (_fading != null || active.CurrentId != now.Result.Id)
             {
-                mpv.CurrentId = now.Result.Id;
+                EndOverlap();
+                active.CurrentId = now.Result.Id;
                 PlayResolved(now.Result.Id);
             }
+        }
+
+        void EndOverlap()
+        {
+            var f = _fading;
+            if (f == null) return;
+            _fading = null;
+            _overlapId = null;
+            try { f.StopAudio(); } catch { }
+        }
+
+        string? AfForTrack(Track? t, bool fadeIn)
+        {
+            if (!_cfg.Music.Crossfade) return null;
+            var fade = FadeSecs();
+            double start = -1;
+            if (t != null && t.Result.Duration > fade)
+                start = t.Result.Duration - fade;
+            if (!fadeIn && start < 0) return null;
+            return MpvPlayer.BuildAf(_cfg.Music.Equalizer, _cfg.Music.Loudness, fadeIn ? fade : 0, start);
+        }
+
+        bool OwnsCurrent(MpvPlayer p) =>
+            p == _active && p.CurrentId != null && p.CurrentId == music.NowPlaying?.Result.Id;
+
+        void ActiveEnded(MpvPlayer p)
+        {
+            if (p == _fading) { EndOverlap(); return; }
+            if (!OwnsCurrent(p)) return;
+            EndOverlap();
+            music.OnClientEnded();
+        }
+
+        void ActiveFailed(MpvPlayer p)
+        {
+            if (p == _fading) { EndOverlap(); return; }
+            if (!OwnsCurrent(p)) return;
+            EndOverlap();
+            music.OnClientFailed();
+        }
+
+        void ActiveRetrying(MpvPlayer p)
+        {
+            if (p == _fading) { EndOverlap(); return; }
+            if (!OwnsCurrent(p)) return;
+            RetryResolve();
         }
 
         async void PlayResolved(string id)
         {
             if (_resolvingId == id) return;
+            var active = _active;
+            if (active == null) return;
+            var track = music.NowPlaying;
+            var af = track != null && track.Result.Id == id ? AfForTrack(track, fadeIn: false) : null;
             _resolvingId = id;
             var resume = _resumeSeek > 0;
             var resumePos = _resumeSeek;
@@ -168,15 +246,15 @@ internal static class Program
             _resumePlaying = true;
             try
             {
-                if (mpv.CurrentId != id) return;
+                if (active.CurrentId != id) return;
                 var url = StreamUrl(id);
                 if (resume)
                 {
-                    mpv.Resume(url, resumePos, resumePlay);
+                    active.Resume(url, resumePos, resumePlay, af);
                 }
                 else
                 {
-                    mpv.Play(url);
+                    active.Play(url, af);
                 }
             }
             finally
@@ -187,27 +265,29 @@ internal static class Program
 
         void RetryResolve()
         {
-            var id = _mpv?.CurrentId;
-            if (id == null || _resolvingId == id) return;
-            if (_mpv?.CurrentId != id) return;
+            var active = _active;
+            var id = active?.CurrentId;
+            if (active == null || id == null || _resolvingId == id) return;
+            if (active.CurrentId != id) return;
             _resumeSeek = 0;
             _resumePlaying = true;
-            _mpv.RetryPlay(StreamUrl(id));
+            active.RetryPlay(StreamUrl(id));
         }
 
         string StreamUrl(string id) => "http://127.0.0.1:" + port + "/api/stream/" + id;
 
         void SyncMpv()
         {
+            var active = _active;
             var now = music.NowPlaying;
-            if (now != null && mpv.Available)
+            if (now != null && active != null && active.Available)
             {
-                music.SetPosition(now.Result.Id, mpv.Position, !mpv.Paused);
+                music.SetPosition(now.Result.Id, active.Position, !active.Paused);
             }
-            if (!mpv.Available) return;
-            if (Math.Abs(mpv.Position - _lastPos) < 0.5 && mpv.Paused == _lastPaused) return;
-            _lastPos = mpv.Position;
-            _lastPaused = mpv.Paused;
+            if (active == null || !active.Available) return;
+            if (Math.Abs(active.Position - _lastPos) < 0.5 && active.Paused == _lastPaused) return;
+            _lastPos = active.Position;
+            _lastPaused = active.Paused;
             ws.Broadcast(new { type = "music-time", position = _lastPos, playing = !_lastPaused });
             if ((DateTime.UtcNow - _lastSnapshotUtc).TotalSeconds > 20)
             {
@@ -219,6 +299,61 @@ internal static class Program
                 }
                 catch { }
             }
+            MaybeFadeOut();
+        }
+
+        static double FadeSecs() =>
+            Math.Clamp(_cfg.Music.CrossfadeSeconds <= 0 ? 4 : _cfg.Music.CrossfadeSeconds, 0.5, 10);
+
+        void MaybeFadeOut()
+        {
+            if (!_cfg.Music.Crossfade) return;
+            var mus = _music;
+            var m = _active;
+            if (mus == null || m == null || !m.Available) return;
+            if (_fading != null || _overlapSetup) return;
+            var now = mus.NowPlaying;
+            if (now == null || m.Paused) return;
+            var fadeSecs = FadeSecs();
+            var dur = m.Duration > 0 ? m.Duration : now.Result.Duration;
+            if (dur <= 0) return;
+            var remaining = dur - m.Position;
+            if (remaining > fadeSecs || remaining <= 0) return;
+            // Overlap trigger only: both fades live in the tracks' filter
+            // chains, so there is no volume automation to run or race.
+            // With nothing queued the current track's own fade-out carries it.
+            _overlapSetup = true;
+            try
+            {
+                var next = mus.BeginOverlap();
+                if (next != null) StartOverlap(next);
+            }
+            catch { }
+            finally { _overlapSetup = false; }
+        }
+
+        void StartOverlap(Track next)
+        {
+            var old = _active;
+            var incoming = old == _mpv ? _mpvB : _mpv;
+            var newId = next.Result.Id;
+            if (old == null || incoming == null || !incoming.Available)
+            {
+                Log.Warn("overlap unavailable, hard cut to " + newId);
+                if (old != null)
+                {
+                    old.CurrentId = newId;
+                    PlayResolved(newId);
+                }
+                return;
+            }
+            _fading = old;
+            _active = incoming;
+            _overlapId = newId;
+            incoming.CurrentId = newId;
+            incoming.SetVolume(_cfg.Music.DefaultVolume);
+            incoming.Play(StreamUrl(newId), AfForTrack(next, fadeIn: true));
+            Log.Info("crossfade overlap: " + (old.CurrentId ?? "?") + " -> " + newId);
         }
 
         AppDomain.CurrentDomain.ProcessExit += (_, _) => ShutdownServices();
@@ -264,11 +399,18 @@ internal static class Program
         updater.QuitRequested += quitApp;
         updater.PauseRequested += () =>
         {
-            try { _mpv?.SetPause(true); } catch { }
+            try { _active?.SetPause(true); _fading?.SetPause(true); } catch { }
             Thread.Sleep(600);
         };
         TrayApp.Start(url, quitApp, updater,
-            onPlayPause: () => { if (_music?.NowPlaying != null && _mpv is { Available: true }) _mpv.SetPause(!_mpv.Paused); },
+            onPlayPause: () => {
+                if (_music?.NowPlaying != null && _active is { Available: true })
+                {
+                    var p = !_active.Paused;
+                    _active.SetPause(p);
+                    try { _fading?.SetPause(p); } catch { }
+                }
+            },
             onNext: () => _music?.Skip(),
             onPrev: () => _music?.Prev());
 
@@ -306,13 +448,14 @@ internal static class Program
         try { _tiktok?.Stop(); } catch { }
         try { _stats?.Stop(); } catch { }
         try { _mpv?.Dispose(); } catch { }
+        try { _mpvB?.Dispose(); } catch { }
         try { _updater?.Dispose(); } catch { }
     }
 
     static void CaptureLastPlayed()
     {
         if (_music?.NowPlaying is not { } np) return;
-        if (_mpv is not { Available: true } m) return;
+        if (_active is not { Available: true } m) return;
         _cfg.Music.LastPlayed = new LastPlayedState
         {
             Id = np.Result.Id,

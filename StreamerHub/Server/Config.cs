@@ -35,6 +35,8 @@ public sealed class MusicConfig
     public string AudioDevice { get; set; } = "";
     public double[] Equalizer { get; set; } = new double[EqBands];
     public bool Loudness { get; set; } = true;
+    public bool Crossfade { get; set; } = true;
+    public double CrossfadeSeconds { get; set; } = 4;
     public LastPlayedState? LastPlayed { get; set; }
     public List<QueuedTrackState> Queue { get; set; } = new();
     public List<LikedTrackState> Liked { get; set; } = new();

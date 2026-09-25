@@ -153,6 +153,7 @@ public sealed class MusicEngine
         Notice?.Invoke("blocked: " + (string.IsNullOrEmpty(result.Title) ? result.Id : result.Title));
         StateChanged?.Invoke();
         PersistRequested?.Invoke();
+        PrefetchNext();
     }
 
     public void Unblock(string id)
@@ -278,6 +279,29 @@ public sealed class MusicEngine
         StateChanged?.Invoke();
         Notice?.Invoke("playing: " + track.Title + (track.RequestedBy.Length > 0 ? " (by " + track.RequestedBy + ")" : ""));
         PrefetchNext();
+    }
+
+    public Track? BeginOverlap()
+    {
+        Track? next;
+        lock (_queue)
+        {
+            if (NowPlaying == null || _queue.Count == 0) return null;
+            _history.Add(NowPlaying);
+            if (_history.Count > 30) _history.RemoveAt(0);
+            next = _queue[0];
+            _queue.RemoveAt(0);
+            NowPlaying = next;
+            Position = 0;
+            Playing = true;
+            _generation++;
+            _radioEarlyFor = null;
+            _cfg.LastPlayed = ToLastPlayed(next, 0, true);
+        }
+        StateChanged?.Invoke();
+        Notice?.Invoke("playing: " + next.Result.Title + (next.RequestedBy.Length > 0 ? " (by " + next.RequestedBy + ")" : ""));
+        PrefetchNext();
+        return next;
     }
 
     void PrefetchNext()
