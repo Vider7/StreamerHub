@@ -90,20 +90,42 @@ export default function App() {
   const appName = state.app?.name ?? "StreamerHub";
 
   const [theme, setTheme] = React.useState<string>(() => localStorage.getItem("sh.theme") ?? "amber");
+  const [accent, setAccent] = React.useState<string>(() => localStorage.getItem("sh.accent") ?? "#ffffff");
   const [settingsOpen, setSettingsOpen] = React.useState(false);
   const [wizSkip, setWizSkip] = React.useState(() => localStorage.getItem("sh.setup.skip") === "1");
 
   React.useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-  }, [theme]);
+    const root = document.documentElement;
+    root.dataset.theme = theme;
+    if (theme === "custom") {
+      root.style.setProperty("--accent", accent);
+      root.style.setProperty("--accent-hover", shade(accent, 22));
+      root.style.setProperty("--accent-down", shade(accent, -18));
+    } else {
+      root.style.removeProperty("--accent");
+      root.style.removeProperty("--accent-hover");
+      root.style.removeProperty("--accent-down");
+    }
+  }, [theme, accent]);
 
   React.useEffect(() => {
-    if (state.connected) send({ type: "theme", id: theme });
+    if (state.connected && theme !== "custom") send({ type: "theme", id: theme });
   }, [state.connected, theme]);
+
+  React.useEffect(() => {
+    if (!state.connected || theme !== "custom") return;
+    const t = window.setTimeout(() => send({ type: "theme", id: "custom", color: accent }), 250);
+    return () => window.clearTimeout(t);
+  }, [state.connected, theme, accent]);
 
   const pickTheme = (t: string) => {
     setTheme(t);
     localStorage.setItem("sh.theme", t);
+  };
+
+  const pickAccent = (c: string) => {
+    setAccent(c);
+    localStorage.setItem("sh.accent", c);
   };
 
   React.useEffect(() => {
@@ -185,6 +207,8 @@ export default function App() {
           send={send}
           theme={theme}
           onTheme={pickTheme}
+          accent={accent}
+          onAccent={pickAccent}
           onClose={() => setSettingsOpen(false)}
         />
       </Overlay>
@@ -403,6 +427,205 @@ function ClearChat({ send, msg = "chat-clear", action, label = "Clear", done = "
       <span className="clear-label">{flash ? done : label}</span>
       <span className="holdbar" aria-hidden="true" />
     </button>
+  );
+}
+
+function hexToHsv(hex: string): [number, number, number] {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!m) return [0, 0, 100];
+  const n = parseInt(m[1], 16);
+  const r = (n >> 16) / 255;
+  const g = ((n >> 8) & 0xff) / 255;
+  const b = (n & 0xff) / 255;
+  const mx = Math.max(r, g, b);
+  const mn = Math.min(r, g, b);
+  const d = mx - mn;
+  let h = 0;
+  if (d > 0) {
+    if (mx === r) h = ((g - b) / d) % 6;
+    else if (mx === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    h *= 60;
+    if (h < 0) h += 360;
+  }
+  return [h, mx === 0 ? 0 : (d / mx) * 100, mx * 100];
+}
+
+function hsvToHex(h: number, s: number, v: number): string {
+  s = Math.min(100, Math.max(0, s)) / 100;
+  v = Math.min(100, Math.max(0, v)) / 100;
+  h = ((h % 360) + 360) % 360;
+  const c = v * s;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = v - c;
+  let r = 0;
+  let g = 0;
+  let b = 0;
+  if (h < 60) { r = c; g = x; }
+  else if (h < 120) { r = x; g = c; }
+  else if (h < 180) { g = c; b = x; }
+  else if (h < 240) { g = x; b = c; }
+  else if (h < 300) { r = x; b = c; }
+  else { r = c; b = x; }
+  const to = (q: number) => Math.round((q + m) * 255).toString(16).padStart(2, "0");
+  return "#" + to(r) + to(g) + to(b);
+}
+
+const PICKER_PRESETS = ["#ffffff", "#ffd60a", "#ff9f1c", "#ff6b35", "#ff5d7a", "#f72585", "#a06bff", "#56a6ff", "#4cc9f0", "#3ddc97", "#80ed99", "#16161a"];
+
+function HexInput({ value, onChange }: { value: string; onChange: (c: string) => void }) {
+  const [draft, setDraft] = React.useState(value);
+  React.useEffect(() => {
+    setDraft(value);
+  }, [value]);
+  const commit = () => {
+    const m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(draft.trim());
+    if (!m) {
+      setDraft(value);
+      return;
+    }
+    let hex = m[1].toLowerCase();
+    if (hex.length === 3) hex = hex.split("").map((c) => c + c).join("");
+    onChange("#" + hex);
+  };
+  return (
+    <input
+      className="hexinput mono"
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+        if (e.key === "Escape") setDraft(value);
+      }}
+      spellCheck={false}
+      autoComplete="off"
+      maxLength={7}
+      aria-label="hex color, paste to apply"
+    />
+  );
+}
+
+function CustomPicker({ value, onChange }: { value: string; onChange: (c: string) => void }) {
+  const [, s, v] = React.useMemo(() => hexToHsv(value), [value]);
+  // Slider hue lives in state (0..360, 360 sticks at the right edge) so the
+  // handle never snaps left and gray colors don't yank it around.
+  const [hue, setHue] = React.useState(() => hexToHsv(value)[0]);
+  React.useEffect(() => {
+    const [vh, vs] = hexToHsv(value);
+    const mod = ((hue % 360) + 360) % 360;
+    if (vs > 0.5 && Math.abs(vh - mod) > 2) setHue(vh);
+  }, [value]);
+  const hueBase = hsvToHex(hue, 100, 100);
+  const set = (nh: number, ns: number, nv: number) => onChange(hsvToHex(nh, ns, nv));
+
+  const padRef = React.useRef<HTMLDivElement>(null);
+  const hueRef = React.useRef<HTMLDivElement>(null);
+
+  const padFrom = (clientX: number, clientY: number) => {
+    const el = padRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const ns = Math.min(100, Math.max(0, ((clientX - r.left) / r.width) * 100));
+    const nv = Math.min(100, Math.max(0, (1 - (clientY - r.top) / r.height) * 100));
+    set(hue, ns, nv);
+  };
+  const hueFrom = (clientX: number) => {
+    const el = hueRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const nh = Math.min(360, Math.max(0, ((clientX - r.left) / r.width) * 360));
+    setHue(nh);
+    set(nh, s, v);
+  };
+
+  const dragPad = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    padFrom(e.clientX, e.clientY);
+    const move = (ev: PointerEvent) => padFrom(ev.clientX, ev.clientY);
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+  };
+  const dragHue = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    hueFrom(e.clientX);
+    const move = (ev: PointerEvent) => hueFrom(ev.clientX);
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+  };
+
+  return (
+    <div className="cpick">
+      <div
+        className="cpad"
+        ref={padRef}
+        role="slider"
+        aria-label="saturation and brightness"
+        aria-valuetext={Math.round(s) + "% saturation, " + Math.round(v) + "% brightness"}
+        tabIndex={0}
+        style={{ background: "linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, transparent), " + hueBase }}
+        onPointerDown={dragPad}
+        onKeyDown={(e) => {
+          if (e.key === "ArrowLeft") set(hue, s - 4, v);
+          if (e.key === "ArrowRight") set(hue, s + 4, v);
+          if (e.key === "ArrowUp") set(hue, s, v + 4);
+          if (e.key === "ArrowDown") set(hue, s, v - 4);
+        }}
+      >
+        <span className="cpad-dot" style={{ left: s + "%", top: 100 - v + "%" }} />
+      </div>
+      <div
+        className="chue"
+        ref={hueRef}
+        role="slider"
+        aria-label="hue"
+        aria-valuemin={0}
+        aria-valuemax={360}
+        aria-valuenow={Math.round(hue)}
+        tabIndex={0}
+        onPointerDown={dragHue}
+        onKeyDown={(e) => {
+          if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+            const nh = Math.min(360, Math.max(0, hue + (e.key === "ArrowLeft" ? -6 : 6)));
+            setHue(nh);
+            set(nh, s, v);
+          }
+        }}
+      >
+        <span className="chue-dot" style={{ left: (hue / 360) * 100 + "%" }} />
+      </div>
+      <div className="cpresets">
+        {PICKER_PRESETS.map((c) => (
+          <button
+            key={c}
+            className={"cdot" + (c.toLowerCase() === value.toLowerCase() ? " on" : "")}
+            style={{ background: c }}
+            onClick={() => {
+              setHue(hexToHsv(c)[0]);
+              onChange(c);
+            }}
+            aria-label={"pick " + c}
+            title={c}
+          />
+        ))}
+      </div>
+      <div className="colorrow">
+        <span className="cprev" style={{ background: value }} aria-hidden="true" />
+        <HexInput value={value} onChange={onChange} />
+      </div>
+    </div>
   );
 }
 
@@ -1108,7 +1331,19 @@ const FIELD_THEMES: { id: string; name: string }[] = [
   { id: "violet", name: "violet" },
   { id: "blue", name: "blue" },
   { id: "rgb", name: "rgb" },
+  { id: "custom", name: "custom" },
 ];
+
+function shade(hex: string, amt: number): string {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!m) return hex;
+  const n = parseInt(m[1], 16);
+  const cl = (v: number) => Math.min(255, Math.max(0, Math.round(v)));
+  const r = cl((n >> 16) + amt);
+  const g = cl(((n >> 8) & 0xff) + amt);
+  const b = cl((n & 0xff) + amt);
+  return "#" + ((r << 16) | (g << 8) | b).toString(16).padStart(6, "0");
+}
 
 const THEME_COLORS: Record<string, string> = {
   amber: "#ff9f1c",
@@ -1237,7 +1472,7 @@ function NumField({ id, value, onChange, min, max }: { id: string; value: string
   );
 }
 
-function SettingsModal({ account, app, logs, logError, send, theme, onTheme, onClose }: {
+function SettingsModal({ account, app, logs, logError, send, theme, onTheme, accent, onAccent, onClose }: {
   account: AccountInfo | null;
   app: AppInfo | null;
   logs: string[];
@@ -1245,6 +1480,8 @@ function SettingsModal({ account, app, logs, logError, send, theme, onTheme, onC
   send: (m: Record<string, unknown>) => void;
   theme: string;
   onTheme: (t: string) => void;
+  accent: string;
+  onAccent: (c: string) => void;
   onClose: () => void;
 }) {
   const [tab, setTab] = React.useState<"themes" | "account" | "config" | "logs" | "credits">("themes");
@@ -1328,14 +1565,17 @@ function SettingsModal({ account, app, logs, logError, send, theme, onTheme, onC
         </div>
         <div className="modal-body">
           {tab === "themes" && (
-            <div className="swatches">
-              {FIELD_THEMES.map((t) => (
-                <button key={t.id} className={"swatch" + (theme === t.id ? " on" : "")} onClick={() => onTheme(t.id)}>
-                  <span className="sw-dot" style={t.id === "rgb" ? { background: THEME_COLORS.rgb } : theme === t.id ? { background: THEME_COLORS[t.id] } : undefined} aria-hidden="true" />
-                  {t.name}
-                </button>
-              ))}
-            </div>
+            <>
+              <div className="swatches">
+                {FIELD_THEMES.map((t) => (
+                  <button key={t.id} className={"swatch" + (theme === t.id ? " on" : "")} onClick={() => onTheme(t.id)}>
+                    <span className="sw-dot" style={t.id === "rgb" ? { background: THEME_COLORS.rgb } : t.id === "custom" ? { background: accent } : theme === t.id ? { background: THEME_COLORS[t.id] } : undefined} aria-hidden="true" />
+                    {t.name}
+                  </button>
+                ))}
+              </div>
+              {theme === "custom" && <CustomPicker value={accent} onChange={onAccent} />}
+            </>
           )}
           {tab === "account" && (
             <>

@@ -24,8 +24,18 @@ public sealed class WebSocketHub
     public long TwitchViewers { get; private set; } = -1;
     public UpdateService? Updater { get; set; }
     string _theme = "amber";
+    string? _themeColor;
     static readonly HashSet<string> ThemeIds = new(StringComparer.OrdinalIgnoreCase)
         { "amber", "rose", "mint", "violet", "blue", "rgb" };
+
+    static string? NormalizeHex(string? s)
+    {
+        if (string.IsNullOrWhiteSpace(s)) return null;
+        s = s.Trim().TrimStart('#');
+        if (s.Length == 3 && s.All(Uri.IsHexDigit)) s = string.Concat(s.SelectMany(c => new[] { c, c }));
+        if (s.Length != 6 || !s.All(Uri.IsHexDigit)) return null;
+        return "#" + s.ToLowerInvariant();
+    }
 
     public Action? ConfigApplied;
 
@@ -99,9 +109,18 @@ public sealed class WebSocketHub
                 case "theme":
                 {
                     var id = doc.RootElement.TryGetProperty("id", out var tid) ? (tid.GetString() ?? "") : "";
-                    if (ThemeIds.Contains(id))
+                    if (id.Equals("custom", StringComparison.OrdinalIgnoreCase)
+                        && doc.RootElement.TryGetProperty("color", out var col)
+                        && NormalizeHex(col.GetString()) is string hex)
+                    {
+                        _theme = "custom";
+                        _themeColor = hex;
+                        Broadcast(new { type = "theme", id = _theme, color = hex });
+                    }
+                    else if (ThemeIds.Contains(id))
                     {
                         _theme = id.ToLowerInvariant();
+                        _themeColor = null;
                         Broadcast(new { type = "theme", id = _theme });
                     }
                     break;
@@ -374,6 +393,7 @@ public sealed class WebSocketHub
     {
         type = "init",
         theme = _theme,
+        themeColor = _themeColor,
         app = new
         {
             name = _cfg.AppName,

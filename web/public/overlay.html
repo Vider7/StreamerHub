@@ -102,8 +102,13 @@
     const rowsEl = document.getElementById("rows");
     const THEMES = { amber: "#ff9f1c", rose: "#ff5d7a", mint: "#3ddc97", violet: "#a06bff", blue: "#56a6ff" };
 
-    function applyTheme(id) {
+    function applyTheme(id, color) {
       const root = document.documentElement;
+      if (id === "custom" && typeof color === "string" && /^#[0-9a-f]{6}$/i.test(color)) {
+        root.classList.remove("rgb");
+        root.style.setProperty("--accent", color);
+        return;
+      }
       if (id === "rgb") { root.classList.add("rgb"); return; }
       root.classList.remove("rgb");
       if (THEMES[id]) root.style.setProperty("--accent", THEMES[id]);
@@ -155,9 +160,9 @@
       ws.onmessage = (ev) => {
         let m;
         try { m = JSON.parse(ev.data); } catch { return; }
-        if (m.type === "init") { render(m.music); applyTheme(m.theme); }
+        if (m.type === "init") { render(m.music); applyTheme(m.theme, m.themeColor); }
         else if (m.type === "music") render(m.music);
-        else if (m.type === "theme" && m.id) applyTheme(m.id);
+        else if (m.type === "theme" && m.id) applyTheme(m.id, m.color);
       };
       ws.onclose = retry;
       ws.onerror = () => { try { ws.close(); } catch {} };
