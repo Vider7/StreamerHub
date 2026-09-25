@@ -566,13 +566,13 @@ public sealed class MusicEngine
 
     string PickRadioAnchor(string fallback)
     {
-        // Sometimes seed the related-mix from an older played song instead of
-        // always the current one, so radio wanders instead of looping one cluster.
+        // Occasionally seed the related-mix from a recently played song so
+        // radio wanders a little without leaving the neighborhood.
         lock (_queue)
         {
-            if (_history.Count >= 4 && Random.Shared.NextDouble() < 0.4)
+            if (_history.Count >= 4 && Random.Shared.NextDouble() < 0.15)
             {
-                var pool = _history.TakeLast(8).ToList();
+                var pool = _history.TakeLast(4).ToList();
                 if (pool.Count > 0)
                 {
                     var id = pool[Random.Shared.Next(pool.Count)].Result.Id;
@@ -603,23 +603,35 @@ public sealed class MusicEngine
             if (NowPlaying != null && !string.IsNullOrWhiteSpace(NowPlaying.Result.Channel))
                 recentChannels.Add(NowPlaying.Result.Channel.Trim());
         }
-        var eligible = new List<TrackResult>();
+        var eligible = new List<(TrackResult R, int Rank)>();
+        var rank = 0;
         foreach (var r in found)
         {
+            rank++;
             if (r.Duration <= 0 || r.Duration > _cfg.MaxTrackMinutes * 60.0) continue;
             var rn = NormalizeTitle(r.Title);
             if (rn.Length == 0) continue;
             var dup = seenTitles.Any(t => t == rn || t.Contains(rn, StringComparison.Ordinal) || rn.Contains(t, StringComparison.Ordinal));
             if (r.Id == anchor || used.Contains(r.Id) || dup || IsBlocked(r.Id)) continue;
-            eligible.Add(r);
+            eligible.Add((r, rank));
         }
         if (eligible.Count == 0) return null;
-        // Shuffle: random pick, de-prioritizing the same artist as recent plays
-        // so it can still appear, just not over and over.
-        var varied = eligible.Where(r =>
-            string.IsNullOrWhiteSpace(r.Channel) || !recentChannels.Contains(r.Channel.Trim())).ToList();
+        // Weighted shuffle: earlier YouTube results are closer matches, so
+        // they weigh more. Same artist as recent plays is de-prioritized so
+        // it can still appear, just not over and over.
+        var varied = eligible.Where(e =>
+            string.IsNullOrWhiteSpace(e.R.Channel) || !recentChannels.Contains(e.R.Channel.Trim())).ToList();
         var pool = varied.Count > 0 ? varied : eligible;
-        var winner = pool[Random.Shared.Next(pool.Count)];
+        var maxRank = found.Count + 1;
+        var total = 0;
+        foreach (var e in pool) total += maxRank - e.Rank;
+        var roll = Random.Shared.Next(total);
+        var winner = pool[^1].R;
+        foreach (var e in pool)
+        {
+            roll -= maxRank - e.Rank;
+            if (roll < 0) { winner = e.R; break; }
+        }
         return new Track { Result = winner, RequestedBy = "radio", RequestedPlatform = null };
     }
 
