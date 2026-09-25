@@ -29,6 +29,7 @@ Everything your stream needs in one browser tab: chat from **Twitch** and **TikT
 |---|---|
 | **Both chats, one column** | Twitch and TikTok newest-on-top, with platform badges and a shield for mods |
 | **Faces + profiles** | Every chatter shows their profile picture (or an initial disc when none is found); click a name to open their Twitch/TikTok profile |
+| **Translate** | Select any message, right-click, translate it to English (source language shown) |
 | **Quiet bot** | Only song requests appear in the feed. Nothing is ever written to your Twitch or TikTok chat |
 | **Clear chat** | Hold the button (it fills as you hold) to wipe the on-screen feed |
 
@@ -43,7 +44,7 @@ Viewers, likes, gifts (with diamond value), follows, shares, joins. They update 
 | **Viewer requests** | Viewers type `!sr song name` in chat, the song lands in the queue and plays |
 | **Background player** | Music runs in mpv, its own app with its own sound — capture it in OBS as a normal channel |
 | **Keeps playing** | Close the tab or the browser and it keeps going; reopen and it shows exactly where it is |
-| **Crossfade** | Each song fades out over the last seconds and the next fades in (toggle Xfade; length in `Music.CrossfadeSeconds`) |
+| **Crossfade** | True overlap: the next song starts on a second player while the current fades out (toggle Xfade; length in `Music.CrossfadeSeconds`, default 4s) |
 | **Full transport** | Play, pause, previous, skip, volume, scrub bar (drag or arrow keys nudge 5s) |
 | **EQ & loudness** | Slim 10-band equalizer (plus Flat / Bass+ / Vocal / Club presets) and a loudness switch, both saved |
 | **Library lists** | History, liked, and blocked songs live under the player |
@@ -113,7 +114,7 @@ Viewers request songs with `!sr` plus a song name (links are rejected, names onl
 |---|---|
 | Rearrange | Drag panels by their title bars (chat / stats / music) |
 | Resize activity | Drag the divider above the activity feed up or down |
-| Change theme | Gear icon → themes (amber, rose, mint, violet, blue, rgb) |
+| Change theme | Gear icon → themes (amber, rose, mint, violet, blue, rgb, or Custom with your own color) |
 | Open it again | Double-click the tray icon |
 | Stop it | Right-click the tray icon → **Quit** |
 
@@ -128,7 +129,10 @@ Switch anytime in the gear menu. The accent follows the theme everywhere (live t
   <img src="https://img.shields.io/badge/-violet-a06bff?style=flat-square" />
   <img src="https://img.shields.io/badge/-blue-56a6ff?style=flat-square" />
   <img src="https://img.shields.io/badge/-rgb_cycles-8e8898?style=flat-square" />
+  <img src="https://img.shields.io/badge/-custom-white?style=flat-square" />
 </p>
+
+Pick **Custom** for any accent color (shade pad, hue slider, presets, or paste a hex). The stream overlay follows it too.
 
 ### Stream overlay
 
@@ -175,7 +179,9 @@ Show the live queue on stream: add a browser source in OBS pointing at `http://1
     "MpvPath": "",                  // leave empty to use the mpv in tools
     "AudioDevice": "",              // empty = your default sound output; set one for a specific device
     "Equalizer": [0,0,0,0,0,0,0,0,0,0], // 10-band EQ, each band -12 to +12
-    "Loudness": false               // true = smooth out the sound for streaming
+    "Loudness": false,              // true = smooth out the sound for streaming
+    "Crossfade": true,              // true = overlap the next song over the ending one
+    "CrossfadeSeconds": 4           // overlap length in seconds (0.5 to 10)
   },
   "Updater": {
     "Enabled": true,                // the built-in update checker
