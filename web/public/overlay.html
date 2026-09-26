@@ -48,6 +48,12 @@
     flex-direction: column;
     gap: 3px;
   }
+  #rowsView {
+    overflow: hidden;
+  }
+  #rowsView.scroll #rows {
+    transition: transform 1s ease-in-out;
+  }
   .row {
     display: flex;
     align-items: center;
@@ -91,8 +97,10 @@
     <div class="now" id="now">
       <span class="ndot"></span>
       <span class="ntitle" id="nowTitle"></span>
-      <span class="nby" id="nowBy"></span>
+      <span className="nby" id="nowBy"></span>
     </div>
+    <div id="rowsView"><div class="rows" id="rows"></div></div>
+  </div>
     <div class="rows" id="rows"></div>
   </div>
   <script>
@@ -100,7 +108,54 @@
     const nowTitle = document.getElementById("nowTitle");
     const nowBy = document.getElementById("nowBy");
     const rowsEl = document.getElementById("rows");
+    const rowsView = document.getElementById("rowsView");
     const THEMES = { amber: "#ff9f1c", rose: "#ff5d7a", mint: "#3ddc97", violet: "#a06bff", blue: "#56a6ff" };
+    const VISIBLE = 5;
+    const STEP_MS = 2500;
+    const END_HOLD_MS = 1800;
+    let scrollTimer = 0;
+    let scrollPos = 0;
+    let scrollDir = 1;
+
+    function stopScroll() {
+      if (scrollTimer) clearTimeout(scrollTimer);
+      scrollTimer = 0;
+      scrollPos = 0;
+      scrollDir = 1;
+      rowsView.classList.remove("scroll");
+      rowsEl.style.transform = "";
+      rowsView.style.height = "";
+    }
+
+    function startScroll() {
+      const rows = rowsEl.querySelectorAll(".row");
+      if (rows.length <= VISIBLE) return;
+      const first = rows[0];
+      const step = first.offsetHeight + 3;
+      const max = rows.length - VISIBLE;
+      rowsView.style.height = (first.offsetHeight * VISIBLE + 3 * (VISIBLE - 1)) + "px";
+      rowsView.classList.add("scroll");
+      const tick = () => {
+        scrollPos += scrollDir;
+        if (scrollPos >= max) {
+          scrollPos = max;
+          rowsEl.style.transform = "translateY(" + (-scrollPos * step) + "px)";
+          scrollDir = -1;
+          scrollTimer = setTimeout(tick, END_HOLD_MS);
+          return;
+        }
+        if (scrollPos <= 0) {
+          scrollPos = 0;
+          rowsEl.style.transform = "";
+          scrollDir = 1;
+          scrollTimer = setTimeout(tick, END_HOLD_MS);
+          return;
+        }
+        rowsEl.style.transform = "translateY(" + (-scrollPos * step) + "px)";
+        scrollTimer = setTimeout(tick, STEP_MS);
+      };
+      scrollTimer = setTimeout(tick, STEP_MS);
+    }
 
     function applyTheme(id, color) {
       const root = document.documentElement;
@@ -151,6 +206,8 @@
         });
       }
       rowsEl.replaceChildren(frag);
+      stopScroll();
+      startScroll();
     }
 
     function connect() {

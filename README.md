@@ -137,7 +137,7 @@ Pick **Custom** for any accent color (shade pad, hue slider, presets, or paste a
 
 ### Stream overlay
 
-Show the live queue on stream: add a browser source in OBS pointing at `http://127.0.0.1:51324/overlay.html`. Transparent background, current song plus what's queued. It follows your dashboard theme automatically.
+Show the live queue on stream: add a browser source in OBS pointing at `http://127.0.0.1:51324/overlay.html`. Transparent background, current song plus what's queued (long queues auto-scroll five at a time). It follows your dashboard theme automatically.
 
 <p align="center">
   <img src="docs/overlay.png" alt="Stream overlay: now playing plus the song queue" width="100%" />
