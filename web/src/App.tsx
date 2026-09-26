@@ -899,38 +899,19 @@ function PanelMusic({ music, pos, send, appCommand, strip, results }: { music: M
         >
           {"Requests " + ((music?.requests ?? true) ? "On" : "Off")}
         </button>
-        <button
-          className={"mini" + (historyOpen ? " accent" : "")}
-          title="recently played songs"
-          aria-pressed={historyOpen}
-          onClick={() => setHistoryOpen((v) => !v)}
-        >
-          history
-        </button>
-        <button
-          className={"mini" + (likedOpen ? " accent" : "")}
-          title="songs you liked"
-          aria-pressed={likedOpen}
-          onClick={() => setLikedOpen((v) => !v)}
-        >
-          liked
-        </button>
-        <button
-          className={"mini" + (blockedOpen ? " accent" : "")}
-          title="blocked songs - they will never play again"
-          aria-pressed={blockedOpen}
-          onClick={() => setBlockedOpen((v) => !v)}
-        >
-          blocked
-        </button>
-        <button
-          className={"mini" + (eqOpen ? " accent" : "")}
-          title="equalizer"
-          aria-pressed={eqOpen}
-          onClick={() => setEqOpen((v) => !v)}
-        >
-          EQ
-        </button>
+        <span className="strip-div" aria-hidden="true" />
+        <IconBtn title="recently played songs" label="recently played songs" pressed={historyOpen} className="nav" onClick={() => setHistoryOpen((v) => !v)}>
+          <i className="fa-solid fa-clock-rotate-left" aria-hidden="true" />
+        </IconBtn>
+        <IconBtn title="songs you liked" label="songs you liked" pressed={likedOpen} className="nav" onClick={() => setLikedOpen((v) => !v)}>
+          <i className="fa-solid fa-heart" aria-hidden="true" />
+        </IconBtn>
+        <IconBtn title="blocked songs - they will never play again" label="blocked songs" pressed={blockedOpen} className="nav" onClick={() => setBlockedOpen((v) => !v)}>
+          <i className="fa-solid fa-ban" aria-hidden="true" />
+        </IconBtn>
+        <IconBtn title="equalizer" label="equalizer" pressed={eqOpen} className="nav" onClick={() => setEqOpen((v) => !v)}>
+          <i className="fa-solid fa-sliders" aria-hidden="true" />
+        </IconBtn>
       </div>
       <NowPlaying music={music} pos={pos} send={send} />
       {historyOpen && <HistoryListM history={music?.history ?? []} send={send} onClose={() => setHistoryOpen(false)} />}
@@ -1425,9 +1406,9 @@ const SearchBoxM = React.memo(function SearchBox({ send, results }: { send: (m: 
   );
 });
 
-function IconBtn({ title, onClick, children, label, className }: { title: string; onClick: () => void; children: React.ReactNode; label?: string; className?: string }) {
+function IconBtn({ title, onClick, children, label, className, pressed }: { title: string; onClick: () => void; children: React.ReactNode; label?: string; className?: string; pressed?: boolean }) {
   return (
-    <button className={"icon" + (className ? " " + className : "")} title={title} onClick={onClick} aria-label={label ?? title}>
+    <button className={"icon" + (className ? " " + className : "") + (pressed ? " on" : "")} title={title} onClick={onClick} aria-label={label ?? title} aria-pressed={pressed}>
       {children}
     </button>
   );

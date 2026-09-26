@@ -763,8 +763,8 @@ a.who:hover .user {
 }
 
 .now {
-  border: 1px solid var(--hair);
-  background: var(--raised);
+  border: 1px solid #38334a;
+  background: #1e1b24;
   border-radius: 8px;
   padding: 12px;
   display: flex;
@@ -932,6 +932,39 @@ a.who:hover .user {
 .icon:active {
   background: #2a2634;
   transform: scale(0.94);
+}
+
+.strip-div {
+  width: 1px;
+  align-self: stretch;
+  margin: 2px 2px;
+  background: var(--hair);
+  flex: none;
+}
+
+.icon.nav {
+  width: 26px;
+  height: 26px;
+  font-size: 11px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  color: var(--dim);
+  flex: none;
+}
+
+.icon.nav:hover {
+  color: var(--txt);
+  border-color: var(--hair);
+  background: var(--raised);
+}
+
+.icon.nav.on {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+.icon.nav:active {
+  transform: scale(0.92);
 }
 
 .icon.liked {
@@ -1243,6 +1276,10 @@ input[type="range"].slider::-moz-range-thumb {
   color: var(--txt);
   border-color: var(--ghost);
   background: #211e28;
+}
+
+.mini:active {
+  transform: scale(0.96);
 }
 
 .mini.accent {

@@ -129,7 +129,11 @@ public sealed class TwitchChatService : IDisposable
     void HandleMessage(TwitchLib.Client.Events.OnMessageReceivedArgs e)
     {
         var m = e.ChatMessage;
-        if (string.IsNullOrEmpty(m.Username) || m.Message == null) return;
+        if (string.IsNullOrEmpty(m.Username) || m.Message == null)
+        {
+            Log.Info("twitch chat dropped (no user or text)");
+            return;
+        }
         var login = m.Username.Trim().ToLowerInvariant();
         var avatar = _avatars?.GetCached(login) ?? "";
         if (avatar.Length == 0)

@@ -34,6 +34,16 @@ public sealed class ChatHub
     public long Shares { get; private set; }
     public long Joins { get; private set; }
 
+    static void Invoke<T>(Action<T>? handlers, T arg, string name)
+    {
+        if (handlers == null) return;
+        foreach (var h in handlers.GetInvocationList())
+        {
+            try { ((Action<T>)h)(arg); }
+            catch (Exception ex) { Log.Warn("chat " + name + " listener failed: " + ex.Message); }
+        }
+    }
+
     public event Action<ChatEntry>? MessageAdded;
     public event Action<ChatPlatform, string, string>? AvatarChanged;
     public event Action? MessagesReset;
@@ -83,7 +93,7 @@ public sealed class ChatHub
                 _windowTikTok.Add(DateTime.Now);
             }
         }
-        MessageAdded?.Invoke(entry);
+        Invoke(MessageAdded, entry, nameof(MessageAdded));
         StatsChanged?.Invoke();
     }
 
@@ -173,7 +183,7 @@ public sealed class ChatHub
     {
         var entry = new ActivityEntry { Time = DateTime.Now, Kind = kind, Text = text, ColorHex = colorHex };
         lock (_gate) AddActivityLocked(entry);
-        ActivityAdded?.Invoke(entry);
+        Invoke(ActivityAdded, entry, nameof(ActivityAdded));
     }
 
     public IReadOnlyList<ActivityEntry> ActivitySnapshot()

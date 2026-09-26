@@ -101,6 +101,11 @@ public sealed class TikTokChatService : IDisposable
             var emotes = EmoteList(e.Emotes);
             if (emotes.Count > 0)
                 Log.Info($"tiktok emote: {user} text=[{msg}] ids=[{string.Join(",", emotes.Select(x => x.Id))}]");
+            if (string.IsNullOrWhiteSpace(msg) && emotes.Count == 0)
+            {
+                Log.Info($"tiktok chat dropped (no text, no sticker): {user}");
+                return;
+            }
             if (!string.IsNullOrWhiteSpace(msg) || emotes.Count > 0)
                 _hub.Message(ChatPlatform.TikTok, user, (msg ?? "").Trim(), isMod, isBroad, badge, club, level,
                     ChatAvatars.TikTokAvatar(e.Sender), ChatAvatars.TikTokProfileUrl(user), emotes);
