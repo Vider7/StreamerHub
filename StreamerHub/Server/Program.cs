@@ -39,14 +39,17 @@ internal static class Program
         AudioCache.Init();
         Log.Info("StreamerHub server starting");
 
+        _cfg = AppConfig.Load();
         using var singleInstance = new Mutex(true, @"Global\StreamerHub.Server", out var createdNew);
         if (!createdNew)
         {
-            Log.Info("another StreamerHub server is already running; exiting this instance");
+            // The tray copy is already up (tray-only apps hide from the task
+            // list, so this looks "closed"). Point the user at it instead of
+            // silently exiting.
+            Log.Info("another StreamerHub server is already running; opening its dashboard and exiting this instance");
+            OpenBrowser("http://127.0.0.1:" + _cfg.Port);
             return 0;
         }
-
-        _cfg = AppConfig.Load();
         var port = _cfg.Port;
         var portArg = args.FirstOrDefault(a => a.StartsWith("--port=", StringComparison.OrdinalIgnoreCase));
         if (portArg != null && int.TryParse(portArg.Split('=')[1], out var parsedPort)) port = parsedPort;

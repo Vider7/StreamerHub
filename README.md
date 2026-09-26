@@ -116,7 +116,7 @@ Viewers request songs with `!sr` plus a song name (links are rejected, names onl
 | Rearrange | Drag panels by their title bars (chat / stats / music) |
 | Resize activity | Drag the divider above the activity feed up or down |
 | Change theme | Gear icon → themes (amber, rose, mint, violet, blue, rgb, or Custom with your own color) |
-| Open it again | Double-click the tray icon |
+| Open it again | Double-click the tray icon (or run the exe again — it opens the dashboard if already running) |
 | Stop it | Right-click the tray icon → **Quit** |
 
 ### Themes
