@@ -24,6 +24,7 @@ export type ChatEntry = {
   fanclubName?: string;
   fanclubLevel?: number;
   avatar?: string;
+  avatarFb?: string;
   profileUrl?: string;
   emotes?: { id: string; uuid: string; img: string }[];
   _k?: number;

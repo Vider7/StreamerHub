@@ -780,18 +780,18 @@ function MsgBody({ msg, emotes }: { msg: string; emotes?: { id: string; uuid: st
 
 function ChatRow({ e }: { e: any }) {
   const tag = e.role === "bot" ? "BOT" : e.tag;
-  const [imgOk, setImgOk] = React.useState(true);
-  React.useEffect(() => { setImgOk(true); }, [e.avatar]);
+  const [imgSrc, setImgSrc] = React.useState(e.avatar || e.avatarFb || "");
+  React.useEffect(() => { setImgSrc(e.avatar || e.avatarFb || ""); }, [e.avatar, e.avatarFb]);
   const who = (
     <>
-      {e.avatar && imgOk ? (
+      {imgSrc ? (
         <img
           className="chatpfp"
-          src={e.avatar}
+          src={imgSrc}
           alt=""
           loading="lazy"
           referrerPolicy="no-referrer"
-          onError={() => setImgOk(false)}
+          onError={() => setImgSrc((cur: string) => (e.avatarFb && cur !== e.avatarFb ? e.avatarFb : ""))}
         />
       ) : (
         <span className="chatpfp fallback" style={{ background: e.color || undefined }} title={e.user}>

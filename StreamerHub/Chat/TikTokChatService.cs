@@ -107,8 +107,14 @@ public sealed class TikTokChatService : IDisposable
                 return;
             }
             if (!string.IsNullOrWhiteSpace(msg) || emotes.Count > 0)
+            {
+                var avatar = ChatAvatars.TikTokAvatar(e.Sender);
+                var fallback = ChatAvatars.TikTokAvatarFallback(user);
+                if (avatar.Length == 0) avatar = fallback;
+                else if (fallback == avatar) fallback = "";
                 _hub.Message(ChatPlatform.TikTok, user, (msg ?? "").Trim(), isMod, isBroad, badge, club, level,
-                    ChatAvatars.TikTokAvatar(e.Sender), ChatAvatars.TikTokProfileUrl(user), emotes);
+                    avatar, ChatAvatars.TikTokProfileUrl(user), emotes, fallback);
+            }
         };
         c.OnEmoteChat += (_, e) =>
         {
@@ -118,8 +124,12 @@ public sealed class TikTokChatService : IDisposable
             var (badge, club, level) = Fanclub(e.User);
             var emotes = EmoteList(e.Emotes);
             Log.Info($"tiktok emote-only: {user} ids=[{string.Join(",", emotes.Select(x => x.Id))}]");
+            var avatarOnly = ChatAvatars.TikTokAvatar(e.User);
+            var fallbackOnly = ChatAvatars.TikTokAvatarFallback(user);
+            if (avatarOnly.Length == 0) avatarOnly = fallbackOnly;
+            else if (fallbackOnly == avatarOnly) fallbackOnly = "";
             _hub.Message(ChatPlatform.TikTok, user, "", isMod, isBroad, badge, club, level,
-                ChatAvatars.TikTokAvatar(e.User), ChatAvatars.TikTokProfileUrl(user), emotes);
+                avatarOnly, ChatAvatars.TikTokProfileUrl(user), emotes, fallbackOnly);
         };
         c.OnGiftMessage += (t, e) =>
         {

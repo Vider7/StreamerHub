@@ -562,6 +562,7 @@ public sealed class WebSocketHub
         fanclubName = e.FanclubName,
         fanclubLevel = e.FanclubLevel,
         avatar = e.AvatarUrl,
+        avatarFb = e.AvatarFallback,
         profileUrl = e.ProfileUrl,
         emotes = e.Emotes.Select(x => new { id = x.Id, uuid = x.Uuid, img = x.Image }),
     };

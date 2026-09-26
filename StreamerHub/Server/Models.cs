@@ -19,6 +19,7 @@ public sealed class ChatEntry
     public string FanclubName { get; init; } = "";
     public int FanclubLevel { get; init; }
     public string AvatarUrl { get; set; } = "";
+    public string AvatarFallback { get; set; } = "";
     public string ProfileUrl { get; init; } = "";
     public List<ChatEmote> Emotes { get; init; } = new();
 }

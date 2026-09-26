@@ -136,11 +136,7 @@ public sealed class TwitchChatService : IDisposable
         }
         var login = m.Username.Trim().ToLowerInvariant();
         var avatar = _avatars?.GetCached(login) ?? "";
-        if (avatar.Length == 0)
-        {
-            if (_avatars?.HasCredentials == true) _avatars.Request(login);
-            else avatar = ChatAvatars.TwitchAvatarFallback(login);
-        }
+        if (avatar.Length == 0) _avatars?.Request(login);
         _hub.Message(ChatPlatform.Twitch, m.Username, m.Message.Trim(),
             m.IsModerator || m.IsBroadcaster, m.IsBroadcaster,
             "", "", 0, avatar, ChatAvatars.TwitchProfileUrl(login));

@@ -57,7 +57,8 @@ public sealed class ChatHub
 
     public void Message(ChatPlatform platform, string username, string message, bool isMod = false, bool isBroadcaster = false,
         string fanclubBadge = "", string fanclubName = "", int fanclubLevel = 0,
-        string avatarUrl = "", string profileUrl = "", List<ChatEmote>? emotes = null)
+        string avatarUrl = "", string profileUrl = "", List<ChatEmote>? emotes = null,
+        string avatarFallback = "")
     {
         var entry = new ChatEntry
         {
@@ -74,6 +75,7 @@ public sealed class ChatHub
             FanclubName = fanclubName,
             FanclubLevel = fanclubLevel,
             AvatarUrl = avatarUrl,
+            AvatarFallback = avatarFallback,
             ProfileUrl = profileUrl,
             Emotes = emotes ?? new(),
         };
