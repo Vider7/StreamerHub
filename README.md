@@ -30,6 +30,7 @@ Everything your stream needs in one browser tab: chat from **Twitch** and **TikT
 | **Both chats, one column** | Twitch and TikTok newest-on-top, with platform badges and a shield for mods |
 | **Faces + profiles** | Every chatter shows their profile picture (or an initial disc when none is found); click a name to open their Twitch/TikTok profile |
 | **Translate** | Select any message, right-click, translate it to English (source language shown) |
+| **Stickers** | TikTok fanclub stickers and pasted sticker images render inline in chat |
 | **Quiet bot** | Only song requests appear in the feed. Nothing is ever written to your Twitch or TikTok chat |
 | **Clear chat** | Hold the button (it fills as you hold) to wipe the on-screen feed |
 

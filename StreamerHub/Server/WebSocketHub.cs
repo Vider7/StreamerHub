@@ -555,6 +555,7 @@ public sealed class WebSocketHub
         fanclubLevel = e.FanclubLevel,
         avatar = e.AvatarUrl,
         profileUrl = e.ProfileUrl,
+        emotes = e.Emotes.Select(x => new { id = x.Id, uuid = x.Uuid, img = x.Image }),
     };
 
     public void PublishAvatar(ChatPlatform platform, string user, string avatarUrl) => Broadcast(new

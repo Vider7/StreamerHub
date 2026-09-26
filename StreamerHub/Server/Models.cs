@@ -20,6 +20,14 @@ public sealed class ChatEntry
     public int FanclubLevel { get; init; }
     public string AvatarUrl { get; set; } = "";
     public string ProfileUrl { get; init; } = "";
+    public List<ChatEmote> Emotes { get; init; } = new();
+}
+
+public sealed class ChatEmote
+{
+    public string Id { get; init; } = "";
+    public string Uuid { get; init; } = "";
+    public string Image { get; init; } = "";
 }
 
 public sealed class TrackResult

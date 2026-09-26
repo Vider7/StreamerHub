@@ -28,6 +28,9 @@ public static class ChatAvatars
         catch { return ""; }
     }
 
+    public static string? FirstPictureUrl(TikTokLiveSharp.Events.Objects.Picture? pic) =>
+        FirstUrl(pic);
+
     static string? FirstUrl(TikTokLiveSharp.Events.Objects.Picture? pic)
     {
         try

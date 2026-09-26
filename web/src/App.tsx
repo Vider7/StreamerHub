@@ -685,6 +685,99 @@ function TranslatePop({ x, y, text, onClose }: { x: number; y: number; text: str
   );
 }
 
+function escRx(s: string): string {
+  return (s ?? "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+const TRUSTED_IMG_HOST = /\.tiktokcdn(-us)?\.com$/i;
+
+function isTrustedImg(url: string): boolean {
+  try {
+    return TRUSTED_IMG_HOST.test(new URL(url).hostname);
+  } catch {
+    return false;
+  }
+}
+
+function stickerImg(src: string, key: string | number, big?: boolean) {
+  return (
+    <img
+      key={key}
+      className={big ? "sticker big" : "sticker"}
+      src={src}
+      alt=""
+      loading="lazy"
+      referrerPolicy="no-referrer"
+      onError={(ev) => { (ev.currentTarget as HTMLImageElement).style.display = "none"; }}
+    />
+  );
+}
+
+function MsgBody({ msg, emotes }: { msg: string; emotes?: { id: string; uuid: string; img: string }[] }) {
+  const text = String(msg ?? "");
+  // A pasted <img> tag with a trusted src renders as just the sticker.
+  const fullTag = /^\s*<img\b[^>]*\bsrc=["']([^"']+)["'][^>]*>\s*$/i.exec(text);
+  if (fullTag && isTrustedImg(fullTag[1])) {
+    return <span className="msg">{stickerImg(fullTag[1], "full", true)}</span>;
+  }
+  const list = (emotes ?? []).filter((m) => m.img);
+  const byToken = new Map<string, { img: string; id: string }>();
+  const alts: string[] = [];
+  for (const m of list) {
+    for (const tok of ["[" + m.id + "]", "[" + m.uuid + "]", ":" + m.id + ":"]) {
+      if (!tok || tok === "[]" || tok === "::") continue;
+      if (!byToken.has(tok)) {
+        byToken.set(tok, m);
+        alts.push(escRx(tok));
+      }
+    }
+  }
+  const used = new Set<string>();
+  let chunks: string[] = [text];
+  if (alts.length > 0) {
+    const rx = new RegExp("(" + alts.join("|") + ")", "g");
+    chunks = text.split(rx);
+  }
+  const parts: React.ReactNode[] = [];
+  let k = 0;
+  const pushTextWithUrls = (chunk: string) => {
+    const urlRx = /(https?:\/\/[^\s"'<>]*\.tiktokcdn(?:-us)?\.com\/[^\s"'<>]*)/gi;
+    let last = 0;
+    let m: RegExpExecArray | null;
+    let hitUrl = false;
+    while ((m = urlRx.exec(chunk)) !== null) {
+      const url = m[1].replace(/[.,!?;)]+$/, "");
+      if (!isTrustedImg(url)) continue;
+      hitUrl = true;
+      if (m.index > last) parts.push(<React.Fragment key={k++}>{chunk.slice(last, m.index)}</React.Fragment>);
+      parts.push(stickerImg(url, k++));
+      last = m.index + url.length;
+    }
+    if (last > 0) {
+      if (last < chunk.length) parts.push(<React.Fragment key={k++}>{chunk.slice(last)}</React.Fragment>);
+    } else {
+      parts.push(<React.Fragment key={k++}>{chunk}</React.Fragment>);
+    }
+    return hitUrl;
+  };
+  for (const chunk of chunks) {
+    const hit = byToken.get(chunk);
+    if (!hit) {
+      pushTextWithUrls(chunk);
+      continue;
+    }
+    used.add(hit.img);
+    parts.push(stickerImg(hit.img, k++));
+  }
+  const rest = list.filter((m) => !used.has(m.img));
+  return (
+    <span className="msg">
+      {parts}
+      {rest.map((m, i) => stickerImg(m.img, "r" + i))}
+    </span>
+  );
+}
+
 function ChatRow({ e }: { e: any }) {
   const tag = e.role === "bot" ? "BOT" : e.tag;
   const [imgOk, setImgOk] = React.useState(true);
@@ -707,7 +800,7 @@ function ChatRow({ e }: { e: any }) {
       )}
       <span className="user" style={{ color: e.color }}>
         {(e.isMod || e.isBroad) && <i className="fa-solid fa-shield-halved modmark" aria-hidden="true" />}
-        {e.fanclubBadge ? <img className="fanbadge" src={e.fanclubBadge} alt="" title={e.fanclubName ? e.fanclubName + (e.fanclubLevel > 0 ? " lv" + e.fanclubLevel : "") : "fanclub"} onError={(ev) => { (ev.currentTarget as HTMLImageElement).style.display = "none"; }} /> : null}
+            {e.fanclubBadge ? <img className="fanbadge" src={e.fanclubBadge} alt="" referrerPolicy="no-referrer" title={e.fanclubName ? e.fanclubName + (e.fanclubLevel > 0 ? " lv" + e.fanclubLevel : "") : "fanclub"} onError={(ev) => { (ev.currentTarget as HTMLImageElement).style.display = "none"; }} /> : null}
         {e.user}
       </span>
     </>
@@ -728,7 +821,7 @@ function ChatRow({ e }: { e: any }) {
               {who}
             </a>
           ) : who}
-          <span className="msg">{e.msg}</span>
+          <MsgBody msg={e.msg} emotes={e.emotes} />
         </>
       )}
     </div>

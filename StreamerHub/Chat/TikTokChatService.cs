@@ -98,9 +98,23 @@ public sealed class TikTokChatService : IDisposable
             var (badge, club, level) = Fanclub(e.Sender);
             if (e.UserIdentity?.IsSubscriberOfHost == true && badge.Length == 0)
                 Log.Info($"tiktok fanclub: {user} is subscribed but sent no usable badge");
-            if (!string.IsNullOrWhiteSpace(msg))
-                _hub.Message(ChatPlatform.TikTok, user, msg.Trim(), isMod, isBroad, badge, club, level,
-                    ChatAvatars.TikTokAvatar(e.Sender), ChatAvatars.TikTokProfileUrl(user));
+            var emotes = EmoteList(e.Emotes);
+            if (emotes.Count > 0)
+                Log.Info($"tiktok emote: {user} text=[{msg}] ids=[{string.Join(",", emotes.Select(x => x.Id))}]");
+            if (!string.IsNullOrWhiteSpace(msg) || emotes.Count > 0)
+                _hub.Message(ChatPlatform.TikTok, user, (msg ?? "").Trim(), isMod, isBroad, badge, club, level,
+                    ChatAvatars.TikTokAvatar(e.Sender), ChatAvatars.TikTokProfileUrl(user), emotes);
+        };
+        c.OnEmoteChat += (_, e) =>
+        {
+            var user = e.User?.UniqueId ?? "?";
+            var isMod = e.UserIdentity?.IsModeratorOfHost == true;
+            var isBroad = e.UserIdentity?.IsHost == true;
+            var (badge, club, level) = Fanclub(e.User);
+            var emotes = EmoteList(e.Emotes);
+            Log.Info($"tiktok emote-only: {user} ids=[{string.Join(",", emotes.Select(x => x.Id))}]");
+            _hub.Message(ChatPlatform.TikTok, user, "", isMod, isBroad, badge, club, level,
+                ChatAvatars.TikTokAvatar(e.User), ChatAvatars.TikTokProfileUrl(user), emotes);
         };
         c.OnGiftMessage += (t, e) =>
         {
@@ -179,20 +193,78 @@ public sealed class TikTokChatService : IDisposable
     {
         try
         {
-            var data = sender?.Fans_Club?.Data;
-            if (data == null) return ("", "", 0);
-            var icons = data.Badge?.Icons;
-            TikTokLiveSharp.Events.Objects.Picture? pic = null;
-            if (icons != null && icons.Count > 0)
+            if (sender == null) return ("", "", 0);
+            // 1. Dedicated fanclub block.
+            var info = sender.FansClub_Info;
+            if (info != null)
             {
-                if (data.Level > 0 && icons.TryGetValue(data.Level, out var exact)) pic = exact;
-                else pic = icons.Values.FirstOrDefault();
+                var img = FirstUrl(info.Badge);
+                if (img != null)
+                {
+                    var data = sender.Fans_Club?.Data;
+                    return (img, data?.ClubName ?? "", data != null ? data.Level : (int)info.FansLevel);
+                }
             }
-            var url = pic?.Urls?.FirstOrDefault() ?? "";
-            if (url.Length == 0) return ("", "", 0);
-            return (url, data.ClubName ?? "", data.Level);
+            // 2. Live subscription badge (super fans).
+            var sub = sender.Subscribe_Info;
+            if (sub != null && sub.IsSubscribedToAnchor)
+            {
+                var img = FirstUrl(sub.Badge?.OriginImg) ?? FirstUrl(sub.Badge?.PreviewImg);
+                if (img != null) return (img, "", 0);
+            }
+            // 3. Legacy fanclub data with per-level icons.
+            {
+                var data = sender.Fans_Club?.Data;
+                if (data != null)
+                {
+                    var icons = data.Badge?.Icons;
+                    TikTokLiveSharp.Events.Objects.Picture? pic = null;
+                    if (icons != null && icons.Count > 0)
+                    {
+                        if (data.Level > 0 && icons.TryGetValue(data.Level, out var exact)) pic = exact;
+                        else pic = icons.Values.FirstOrDefault();
+                    }
+                    var url = FirstUrl(pic);
+                    if (url != null) return (url, data.ClubName ?? "", data.Level);
+                }
+            }
+            // 4. Display badges shipped with the message (last resort).
+            if (sender.Badges != null)
+            {
+                foreach (var b in sender.Badges)
+                {
+                    if (b == null) continue;
+                    var img = FirstUrl(b.Image?.Image) ?? FirstUrl(b.Combine?.Icon);
+                    if (img == null) continue;
+                    var name = b.Combine?.String ?? b.Combine?.Text?.DefaultPattern ?? "";
+                    return (img, name, 0);
+                }
+            }
+            return ("", "", 0);
         }
         catch { return ("", "", 0); }
+    }
+
+    static string? FirstUrl(TikTokLiveSharp.Events.Objects.Picture? pic) =>
+        ChatAvatars.FirstPictureUrl(pic);
+
+    static List<ChatEmote> EmoteList(System.Collections.Generic.IReadOnlyList<TikTokLiveSharp.Events.Objects.Emote>? emotes)
+    {
+        var list = new List<ChatEmote>();
+        try
+        {
+            if (emotes == null) return list;
+            foreach (var em in emotes)
+            {
+                if (em == null) continue;
+                var img = ChatAvatars.FirstPictureUrl(em.Image);
+                if (string.IsNullOrEmpty(img)) continue;
+                list.Add(new ChatEmote { Id = em.Id ?? "", Uuid = em.Uuid ?? "", Image = img });
+                if (list.Count >= 10) break;
+            }
+        }
+        catch { }
+        return list;
     }
 
     public void Stop()
