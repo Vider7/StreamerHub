@@ -23,20 +23,21 @@
     flex-direction: column;
     justify-content: flex-end;
     max-height: 100vh;
-    padding: 8px 12px 10px;
-    font-size: 14px;
+    max-width: 430px;
+    padding: 6px 8px 8px;
+    font-size: 12px;
     line-height: 1.35;
   }
   .now {
     display: none;
     align-items: center;
-    gap: 8px;
-    padding: 5px 10px;
-    margin-bottom: 6px;
+    gap: 7px;
+    padding: 4px 8px;
+    margin-bottom: 5px;
     border-radius: 6px;
     background: rgba(10, 10, 12, 0.55);
     font-weight: 600;
-    font-size: 13px;
+    font-size: 12px;
     border: 1px solid var(--hair);
   }
   .now.paused { opacity: 0.7; }
@@ -57,8 +58,8 @@
   .row {
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 6px 10px;
+    gap: 8px;
+    padding: 4px 8px;
     border-radius: 6px;
     background: rgba(10, 10, 12, 0.55);
     border: 1px solid var(--hair);
@@ -66,7 +67,7 @@
   }
   .row .num {
     flex: none;
-    width: 22px;
+    width: 18px;
     text-align: center;
     font-variant-numeric: tabular-nums;
     font-weight: 700;
@@ -76,15 +77,29 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    flex: 1;
+    min-width: 0;
+  }
+  .row .title > span,
+  .now .ntitle > span {
+    display: inline-block;
+    will-change: transform;
+  }
+  .now .ntitle {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
   }
   .row .by {
     color: var(--dim);
-    font-size: 12px;
+    font-size: 11px;
     margin-left: auto;
     white-space: nowrap;
   }
   .empty {
-    padding: 12px;
+    padding: 8px;
+    font-size: 12px;
     text-align: center;
     color: var(--dim);
     background: rgba(10, 10, 12, 0.45);
@@ -175,7 +190,10 @@
       if (music?.now) {
         nowEl.style.display = "flex";
         nowEl.classList.toggle("paused", music.playing === false);
-        nowTitle.textContent = music.now.title || "";
+        nowTitle.textContent = "";
+        const ns = document.createElement("span");
+        ns.textContent = music.now.title || "";
+        nowTitle.appendChild(ns);
         nowBy.textContent = music.now.by && music.now.by !== "you" ? ("by " + music.now.by) : "";
       } else {
         nowEl.style.display = "none";
@@ -196,8 +214,10 @@
           num.textContent = String(i + 1);
           const title = document.createElement("span");
           title.className = "title";
-          title.textContent = t.title || "";
           title.title = t.title || "";
+          const ts = document.createElement("span");
+          ts.textContent = t.title || "";
+          title.appendChild(ts);
           const by = document.createElement("span");
           by.className = "by";
           by.textContent = t.by && t.by !== "you" ? ("by " + t.by) : "";
@@ -207,7 +227,41 @@
       }
       rowsEl.replaceChildren(frag);
       stopScroll();
+      stopMarquee();
+      runMarquee();
       startScroll();
+    }
+
+    let marqueeTimers = [];
+
+    function stopMarquee() {
+      marqueeTimers.forEach((t) => clearTimeout(t));
+      marqueeTimers = [];
+    }
+
+    function marqueeBox(el) {
+      const inner = el ? el.firstElementChild : null;
+      if (!inner) return;
+      inner.style.transition = "";
+      inner.style.transform = "";
+      const excess = inner.scrollWidth - el.clientWidth;
+      if (excess <= 8) return;
+      const fwd = excess / 45;
+      const go = () => {
+        inner.style.transition = "transform " + fwd.toFixed(2) + "s linear";
+        inner.style.transform = "translateX(" + -excess + "px)";
+        marqueeTimers.push(setTimeout(() => {
+          inner.style.transition = "transform 1s ease-in-out";
+          inner.style.transform = "";
+          marqueeTimers.push(setTimeout(go, 2200));
+        }, fwd * 1000 + 1800));
+      };
+      marqueeTimers.push(setTimeout(go, 1500));
+    }
+
+    function runMarquee() {
+      if (nowEl.style.display !== "none") marqueeBox(nowTitle);
+      rowsEl.querySelectorAll(".row .title").forEach(marqueeBox);
     }
 
     function connect() {

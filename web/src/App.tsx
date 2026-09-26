@@ -1605,7 +1605,6 @@ function SettingsModal({ account, app, logs, logError, send, theme, onTheme, acc
   const [maxQuery, setMaxQuery] = React.useState(String(app?.maxQueryLength ?? 100));
   const [rateLimit, setRateLimit] = React.useState(String(app?.rateLimitSeconds ?? 15));
   const [cooldown, setCooldown] = React.useState(String(app?.globalCooldownSeconds ?? 5));
-  const [requests, setRequests] = React.useState(app?.requestsOpen ?? true);
   const [err, setErr] = React.useState("");
 
   React.useEffect(() => {
@@ -1618,7 +1617,6 @@ function SettingsModal({ account, app, logs, logError, send, theme, onTheme, acc
       setMaxQuery(String(app.maxQueryLength ?? 100));
       setRateLimit(String(app.rateLimitSeconds ?? 15));
       setCooldown(String(app.globalCooldownSeconds ?? 5));
-      setRequests(app.requestsOpen ?? true);
     }
   }, [account, app]);
 
@@ -1654,7 +1652,6 @@ function SettingsModal({ account, app, logs, logError, send, theme, onTheme, acc
       maxQueryLength: num(maxQuery, 100),
       rateLimitSeconds: num(rateLimit, 15),
       globalCooldownSeconds: num(cooldown, 5),
-      requestsOpen: requests,
     });
   };
 
@@ -1749,13 +1746,6 @@ function SettingsModal({ account, app, logs, logError, send, theme, onTheme, acc
                 <label className="field-label" htmlFor="st-maxquery">longest request text (characters)</label>
                 <NumField id="st-maxquery" value={maxQuery} onChange={setMaxQuery} min={1} max={200} />
                 <p className="hint">request text longer than this gets ignored.</p>
-              </div>
-              <div className="formrow">
-                <span className="field-label">accept requests</span>
-                <button className={"mini togg" + (requests ? " on" : "")} title="let viewers request songs" onClick={() => setRequests((r) => !r)}>
-                  Requests {requests ? "on" : "off"}
-                </button>
-                <p className="hint">when off, song requests are ignored. mods can still skip.</p>
               </div>
               {err && <div className="form-err">{err}</div>}
               <div className="modal-actions">
