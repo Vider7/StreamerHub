@@ -892,6 +892,14 @@ function PanelMusic({ music, pos, send, appCommand, strip, results }: { music: M
           {"Xfade " + (music?.crossfade ? "On" : "Off")}
         </button>
         <button
+          className={"mini" + ((music?.requests ?? true) ? " accent" : "")}
+          title="let viewers request songs from chat (saved, stays as set after restart)"
+          aria-pressed={music?.requests ?? true}
+          onClick={() => send({ type: "requests", on: !(music?.requests ?? true) })}
+        >
+          {"Requests " + ((music?.requests ?? true) ? "On" : "Off")}
+        </button>
+        <button
           className={"mini" + (historyOpen ? " accent" : "")}
           title="recently played songs"
           aria-pressed={historyOpen}

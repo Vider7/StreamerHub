@@ -234,6 +234,14 @@ public sealed class WebSocketHub
                     Broadcast(new { type = "radio", on });
                     break;
                 }
+                case "requests":
+                {
+                    var on = doc.RootElement.GetProperty("on").GetBoolean();
+                    _cfg.Music.RequestsOpen = on;
+                    _cfg.Save();
+                    Broadcast(new { type = "requests", on });
+                    break;
+                }
                 case "layout":
                 {
                     var order = doc.RootElement.GetProperty("order").GetString() ?? "CSM";
@@ -614,6 +622,7 @@ public sealed class WebSocketHub
                 position = _music.Position,
                 playing = _music.Playing,
                 radio = _cfg.Music.AutoNextRadio,
+                requests = _cfg.Music.RequestsOpen,
                 crossfade = _cfg.Music.Crossfade,
                 eq = _cfg.Music.Equalizer,
                 loudness = _cfg.Music.Loudness,

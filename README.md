@@ -42,7 +42,7 @@ Viewers, likes, gifts (with diamond value), follows, shares, joins. They update 
 
 | Feature | Description |
 |---|---|
-| **Viewer requests** | Viewers type `!sr song name` in chat, the song lands in the queue and plays |
+| **Viewer requests** | Viewers type `!sr song name` in chat, the song lands in the queue and plays. Toggle **Requests** on/off anytime (saved, stays as set after restart) |
 | **Background player** | Music runs in mpv, its own app with its own sound — capture it in OBS as a normal channel |
 | **Keeps playing** | Close the tab or the browser and it keeps going; reopen and it shows exactly where it is |
 | **Crossfade** | True overlap: the next song starts on a second player while the current fades out (toggle Xfade; length in `Music.CrossfadeSeconds`, default 4s) |

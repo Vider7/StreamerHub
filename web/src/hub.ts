@@ -87,6 +87,7 @@ export type Music = {
   position: number;
   playing: boolean;
   radio: boolean;
+  requests: boolean;
   crossfade: boolean;
   eq: number[];
   loudness: boolean;
@@ -341,6 +342,15 @@ export function useHub() {
         case "radio":
           setState((s) => ({ ...s, music: s.music ? { ...s.music, radio: msg.on as boolean } : s.music }));
           break;
+        case "requests": {
+          const on = msg.on as boolean;
+          setState((s) => ({
+            ...s,
+            music: s.music ? { ...s.music, requests: on } : s.music,
+            app: s.app ? { ...s.app, requestsOpen: on } : s.app,
+          }));
+          break;
+        }
         case "crossfade":
           setState((s) => ({ ...s, music: s.music ? { ...s.music, crossfade: msg.on as boolean } : s.music }));
           break;
