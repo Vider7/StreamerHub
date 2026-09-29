@@ -31,6 +31,7 @@ public sealed class MusicConfig
     public int RateLimitSeconds { get; set; } = 15;
     public int GlobalCooldownSeconds { get; set; } = 5;
     public bool AutoNextRadio { get; set; } = true;
+    public bool LoopOne { get; set; }
     public bool RequestsOpen { get; set; } = true;
     public string MpvPath { get; set; } = "";
     public string AudioDevice { get; set; } = "";

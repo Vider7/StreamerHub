@@ -1089,6 +1089,12 @@ function NowPlaying({ music, pos, send }: { music: Music | null; pos: { position
           </button>
           <IconBtn title="skip to next" onClick={() => send({ type: "skip" })}><i className="fa-solid fa-forward-step" aria-hidden="true" /></IconBtn>
           {now && (
+            <IconBtn title="replay this song from the start" onClick={() => send({ type: "replay" })}><i className="fa-solid fa-rotate-right" aria-hidden="true" /></IconBtn>
+          )}
+          {now && (
+            <IconBtn title={music?.loop ? "loop off - let songs advance" : "loop on - replay this song until turned off"} label="loop this song" pressed={!!music?.loop} className="loop" onClick={() => send({ type: "loop", on: !music?.loop })}><i className="fa-solid fa-repeat" aria-hidden="true" /></IconBtn>
+          )}
+          {now && (
             <IconBtn className={"like" + (liked ? " liked" : "")} title={liked ? "undo like" : "like this song"} onClick={likeCurrent}>
               <i className={liked ? "fa-solid fa-heart" : "fa-regular fa-heart"} aria-hidden="true" />
             </IconBtn>

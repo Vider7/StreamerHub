@@ -502,7 +502,7 @@ public sealed class MusicEngine
 
     void StartRadioFill()
     {
-        if (!_cfg.AutoNextRadio) return;
+        if (!_cfg.AutoNextRadio || _cfg.LoopOne) return;
         lock (_queue)
         {
             if (_radioBusy)
@@ -521,7 +521,7 @@ public sealed class MusicEngine
         lock (_queue)
         {
             cur = NowPlaying?.Result.Id;
-            if (cur == null || !_cfg.AutoNextRadio || _queue.Count > 0 || _radioBusy || _radioEarlyFor == cur) return;
+            if (cur == null || !_cfg.AutoNextRadio || _cfg.LoopOne || _queue.Count > 0 || _radioBusy || _radioEarlyFor == cur) return;
             _radioEarlyFor = cur;
             _radioBusy = true;
         }

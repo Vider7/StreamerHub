@@ -102,7 +102,7 @@ Your settings and lists survive every update. If anything ever goes truly sidewa
 | Add a song | Search box, type a name, Enter — **play** starts it now, **+ queue** lines it up |
 | Reorder the line | Drag queue rows up or down |
 | Jump around a song | Drag the thin bar under the title, or arrow keys nudge 5 seconds |
-| Controls | Play/pause, previous, skip, volume slider |
+| Controls | Play/pause, previous, skip, replay (restarts the song), loop toggle (replays the song until turned off), volume slider |
 | EQ & loudness | Under the player, saved automatically |
 
 ### Chat panel

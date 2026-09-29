@@ -961,6 +961,11 @@ a.who:hover .user {
   transform: scale(0.94);
 }
 
+.icon.on {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
 .strip-div {
   width: 1px;
   align-self: stretch;

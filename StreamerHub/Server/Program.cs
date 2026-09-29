@@ -69,6 +69,8 @@ internal static class Program
         var mpvOk = mpv.Start(_cfg.Music.DefaultVolume, af0);
         var mpvB = new MpvPlayer(MpvPlayer.Locate(_cfg.Music.MpvPath, "mpv"), _cfg.Music.AudioDevice, "streamerhub-mpv-b");
         var mpvBOk = mpvOk && mpvB.Start(_cfg.Music.DefaultVolume, af0, killStale: false);
+        if (mpvOk && _cfg.Music.LoopOne) mpv.SetLoop(true);
+        if (mpvBOk && _cfg.Music.LoopOne) mpvB.SetLoop(true);
         if (!mpvBOk) Log.Warn("mpv second player unavailable; crossfade falls back to fade-out only");
         var ws = new WebSocketHub(_cfg, hub, music, mpv);
         var updater = new UpdateService(_cfg.Updater, m => ws.Broadcast(m));
@@ -310,7 +312,7 @@ internal static class Program
 
         void MaybeFadeOut()
         {
-            if (!_cfg.Music.Crossfade) return;
+            if (!_cfg.Music.Crossfade || _cfg.Music.LoopOne) return;
             var mus = _music;
             var m = _active;
             if (mus == null || m == null || !m.Available) return;
@@ -354,6 +356,7 @@ internal static class Program
             _active = incoming;
             _overlapId = newId;
             incoming.CurrentId = newId;
+            incoming.SetLoop(_cfg.Music.LoopOne);
             incoming.SetVolume(_cfg.Music.DefaultVolume);
             incoming.Play(StreamUrl(newId), AfForTrack(next, fadeIn: true));
             Log.Info("crossfade overlap: " + (old.CurrentId ?? "?") + " -> " + newId);

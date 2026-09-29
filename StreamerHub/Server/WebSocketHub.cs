@@ -177,6 +177,23 @@ public sealed class WebSocketHub
                     ActivePlayer?.Invoke()?.Seek(position);
                     break;
                 }
+                case "replay":
+                {
+                    var player = ActivePlayer?.Invoke() ?? _mpv;
+                    player.Seek(0);
+                    player.SetPause(false);
+                    break;
+                }
+                case "loop":
+                {
+                    var on = doc.RootElement.GetProperty("on").GetBoolean();
+                    _cfg.Music.LoopOne = on;
+                    _cfg.Save();
+                    _mpv.SetLoop(on);
+                    Mpv2?.SetLoop(on);
+                    Broadcast(new { type = "loop", on });
+                    break;
+                }
                 case "remove":
                 {
                     var i = doc.RootElement.GetProperty("index").GetInt32();
@@ -193,7 +210,9 @@ public sealed class WebSocketHub
                 case "volume":
                 {
                     var v = doc.RootElement.GetProperty("value").GetInt32();
-                    _cfg.Music.DefaultVolume = Math.Clamp(v, 0, 100);
+                    v = Math.Clamp(v, 0, 100);
+                    if (v != _cfg.Music.DefaultVolume) Log.Info("volume: " + _cfg.Music.DefaultVolume + " -> " + v);
+                    _cfg.Music.DefaultVolume = v;
                     _cfg.Save();
                     (ActivePlayer?.Invoke() ?? _mpv).SetVolume(v);
                     break;
@@ -462,6 +481,7 @@ public sealed class WebSocketHub
             globalCooldownSeconds = _cfg.Music.GlobalCooldownSeconds,
             autoNextRadio = _cfg.Music.AutoNextRadio,
             requestsOpen = _cfg.Music.RequestsOpen,
+            loopOne = _cfg.Music.LoopOne,
             defaultVolume = _cfg.Music.DefaultVolume,
             tiktokUser = _cfg.TikTok.Username,
             twitchChannel = _cfg.Twitch.Channel,
@@ -642,6 +662,7 @@ public sealed class WebSocketHub
                 radio = _cfg.Music.AutoNextRadio,
                 requests = _cfg.Music.RequestsOpen,
                 crossfade = _cfg.Music.Crossfade,
+                loop = _cfg.Music.LoopOne,
                 eq = _cfg.Music.Equalizer,
                 loudness = _cfg.Music.Loudness,
             };

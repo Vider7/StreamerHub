@@ -65,6 +65,8 @@ public sealed class MpvPlayer : IDisposable
     volatile bool _pendingPause;
     volatile bool _pauseRequested;
     int? _pendingVolume;
+    bool? _pendingLoop;
+    bool _loopWarned;
     volatile string? _pendingAf;
     volatile string? _pendingTrackAf;
     volatile bool _pendingStop;
@@ -275,6 +277,12 @@ public sealed class MpvPlayer : IDisposable
     public void SetVolume(double v)
     {
         _pendingVolume = Math.Max(0, Math.Min(100, (int)Math.Round(v)));
+        _wake.Set();
+    }
+
+    public void SetLoop(bool on)
+    {
+        _pendingLoop = on;
         _wake.Set();
     }
 
@@ -550,6 +558,19 @@ public sealed class MpvPlayer : IDisposable
                     catch
                     {
                         if (!_volumeWarned) { _volumeWarned = true; Log.Warn("volume commands failing, will keep retrying"); }
+                    }
+                }
+                if (_pendingLoop is bool loop)
+                {
+                    try
+                    {
+                        Command("set_property", "loop-file", loop ? "inf" : "no");
+                        _pendingLoop = null;
+                        _loopWarned = false;
+                    }
+                    catch
+                    {
+                        if (!_loopWarned) { _loopWarned = true; Log.Warn("loop commands failing, will keep retrying"); }
                     }
                 }
                 if (_pauseRequested)
