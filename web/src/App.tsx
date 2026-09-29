@@ -1351,6 +1351,7 @@ const LikedListM = React.memo(function LikedList({ liked, send, onClose }: { lik
           <span className="qby">{t.by}</span>
           <span className="qdur mono">{t.durationLabel}</span>
           <button className="mini" onClick={() => playTrack(send, t)} aria-label="play liked song">{"play"}</button>
+          <button className="mini" onClick={() => send({ type: "queue", id: t.id, title: t.title, channel: t.channel, duration: t.duration })} aria-label="queue liked song">{"queue"}</button>
           <button className="mini" onClick={() => send({ type: "like", id: t.id, title: t.title, channel: t.channel, duration: t.duration })} aria-label="remove from liked">{"unlike"}</button>
         </div>
       ))}
