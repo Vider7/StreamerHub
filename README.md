@@ -221,7 +221,11 @@ No window to capture: the player has no UI. If Application Audio Capture is miss
 
 1. In `Config.json`, set `"AllowNetwork": true`, save, reopen the app.
 2. The app opens the firewall port itself on startup. If the log says it couldn't, right-click `StreamerHub.exe` → run as admin **once**, then normally after that.
-3. On your phone (same Wi-Fi), open `http://<your-pc-ip>:51324` — the app logs the exact addresses as `on your network:` on startup.
+3. On your phone (same Wi-Fi), open `http://<your-pc-ip>:51324` (port changes if you changed `Port`).
+
+Finding your PC's IP, two ways:
+- Easiest: open `logs\app.log` next to `StreamerHub.exe` and look for the `on your network: http://...` lines — that's the exact address to type.
+- Or press `Win+R`, run `cmd`, type `ipconfig` and read the **IPv4 Address** under your Wi-Fi adapter (usually `192.168.x.x`).
 
 Only on networks you trust: anyone on the network gets the full dashboard, including playback control. Leave `AllowNetwork` at `false` (the default) to keep it on the PC only. Flip it back to `false` and restart to remove the firewall rule again (needs admin once, same as creating it).
 
