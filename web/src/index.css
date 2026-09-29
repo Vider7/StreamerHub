@@ -51,6 +51,33 @@
   --accent-down: #3b8fe8;
 }
 
+/* Colorblind mode colors are computed in JS (web/src/cvd.ts) from the user's
+   picked accent and written as inline custom properties. Do not hardcode
+   per-mode colors here. */
+
+/* Non-color cues, active in colorblind mode only:
+   - connection LEDs: ok is a filled glowing dot, down is a hollow ring
+   - platform tags: TW solid border, TT dashed border (text already differs) */
+:root[data-cb="protan"] .led.down,
+:root[data-cb="deutan"] .led.down,
+:root[data-cb="tritan"] .led.down {
+  background: transparent;
+  border: 2px solid var(--red);
+  box-shadow: none;
+}
+
+:root[data-cb="protan"] .tag.tw,
+:root[data-cb="deutan"] .tag.tw,
+:root[data-cb="tritan"] .tag.tw {
+  border: 1px solid currentcolor;
+}
+
+:root[data-cb="protan"] .tag.tt,
+:root[data-cb="deutan"] .tag.tt,
+:root[data-cb="tritan"] .tag.tt {
+  border: 1px dashed currentcolor;
+}
+
 :root[data-theme="rgb"] {
   --accent-hover: var(--accent);
   --accent-down: var(--accent);
@@ -218,7 +245,7 @@ select:focus-visible {
 
 .led.ok {
   background: var(--green);
-  box-shadow: 0 0 6px rgba(74, 222, 128, 0.6);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--green) 60%, transparent);
 }
 
 .led.down {
@@ -376,12 +403,12 @@ select:focus-visible {
 }
 
 .tag.tw {
-  background: rgba(160, 107, 255, 0.18);
+  background: color-mix(in srgb, var(--tw) 18%, transparent);
   color: var(--tw);
 }
 
 .tag.tt {
-  background: rgba(254, 44, 85, 0.16);
+  background: color-mix(in srgb, var(--tt) 16%, transparent);
   color: var(--tt);
 }
 
@@ -1374,7 +1401,7 @@ input[type="range"].slider::-moz-range-thumb {
 
 .clear-btn.done {
   color: var(--green);
-  border-color: rgba(74, 222, 128, 0.45);
+  border-color: color-mix(in srgb, var(--green) 45%, transparent);
 }
 
 .searchrow {
@@ -1777,6 +1804,28 @@ input[type="number"].text::-webkit-outer-spin-button {
   border-radius: 50%;
   border: 1px solid rgba(255, 255, 255, 0.15);
   background: var(--accent);
+}
+
+.cbprev {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.cbprev-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.cb-swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  flex: none;
 }
 
 .logbar {

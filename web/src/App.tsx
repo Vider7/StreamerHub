@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef } from "react";
 import { useHub, TrackResultShape, Track, Music, UpdateInfo, AppInfo, AccountInfo } from "./hub";
 import { fmt, fmtClock } from "./format";
+import { cvdPalette, resolveCvd, seenAs, isHex6 } from "./cvd";
 
 type StripDrag = { draggable: true; onDragStart: (e: React.DragEvent) => void; onDragEnd: (e: React.DragEvent) => void; title: string };
 
@@ -91,26 +92,57 @@ export default function App() {
 
   const [theme, setTheme] = React.useState<string>(() => localStorage.getItem("sh.theme") ?? "amber");
   const [accent, setAccent] = React.useState<string>(() => localStorage.getItem("sh.accent") ?? "#ffffff");
+  // Colorblind mode: display preference, synced to the server so the overlay follows.
+  const [cbMode, setCbMode] = React.useState<string>(() => localStorage.getItem("sh.cbmode") ?? "off");
   const [settingsOpen, setSettingsOpen] = React.useState(false);
   const [wizSkip, setWizSkip] = React.useState(() => localStorage.getItem("sh.setup.skip") === "1");
 
+  // One effect owns the color layer: theme accent (or custom picker) converted
+  // through the CVD mode. Mode off = legacy behavior exactly.
   React.useEffect(() => {
     const root = document.documentElement;
     root.dataset.theme = theme;
-    if (theme === "custom") {
-      root.style.setProperty("--accent", accent);
-      root.style.setProperty("--accent-hover", shade(accent, 22));
-      root.style.setProperty("--accent-down", shade(accent, -18));
-    } else {
-      root.style.removeProperty("--accent");
-      root.style.removeProperty("--accent-hover");
-      root.style.removeProperty("--accent-down");
+    for (const k of ["--accent", "--accent-hover", "--accent-down", "--tw", "--tt", "--green", "--red"])
+      root.style.removeProperty(k);
+    document.getElementById("sh-cb-rgb")?.remove();
+    if (cbMode === "off") {
+      if (theme === "custom") {
+        root.style.setProperty("--accent", accent);
+        root.style.setProperty("--accent-hover", shade(accent, 22));
+        root.style.setProperty("--accent-down", shade(accent, -18));
+      }
+      return;
     }
-  }, [theme, accent]);
+    const RGB_STOPS = ["#ff9f1c", "#ff5d7a", "#a06bff", "#56a6ff", "#3ddc97"];
+    const p = cvdPalette(theme === "rgb" ? "#ff9f1c" : baseAccent(theme, accent), cbMode);
+    root.style.setProperty("--tw", p.tw);
+    root.style.setProperty("--tt", p.tt);
+    root.style.setProperty("--green", p.ok);
+    root.style.setProperty("--red", p.bad);
+    if (theme !== "rgb") {
+      root.style.setProperty("--accent", p.accent);
+      root.style.setProperty("--accent-hover", p.hover);
+      root.style.setProperty("--accent-down", p.down);
+    } else {
+      // The CSS animation drives --accent for rgb; override its keyframes with
+      // converted stops. A later @keyframes definition wins over index.css.
+      const s = RGB_STOPS.map((stop) => resolveCvd(stop, cbMode));
+      const el = document.createElement("style");
+      el.id = "sh-cb-rgb";
+      el.textContent =
+        `@keyframes accent-cycle { 0% { --accent: ${s[0]}; } 20% { --accent: ${s[1]}; } ` +
+        `40% { --accent: ${s[2]}; } 60% { --accent: ${s[3]}; } 80% { --accent: ${s[4]}; } 100% { --accent: ${s[0]}; } }`;
+      document.head.appendChild(el);
+    }
+  }, [theme, accent, cbMode]);
 
   React.useEffect(() => {
     if (state.connected && theme !== "custom") send({ type: "theme", id: theme });
   }, [state.connected, theme]);
+
+  React.useEffect(() => {
+    if (state.connected) send({ type: "cbmode", id: cbMode });
+  }, [state.connected, cbMode]);
 
   React.useEffect(() => {
     if (!state.connected || theme !== "custom") return;
@@ -126,6 +158,17 @@ export default function App() {
   const pickAccent = (c: string) => {
     setAccent(c);
     localStorage.setItem("sh.accent", c);
+  };
+
+  React.useEffect(() => {
+    const root = document.documentElement;
+    if (cbMode === "off") delete root.dataset.cb;
+    else root.dataset.cb = cbMode;
+  }, [cbMode]);
+
+  const pickCbMode = (m: string) => {
+    setCbMode(m);
+    localStorage.setItem("sh.cbmode", m);
   };
 
   React.useEffect(() => {
@@ -209,6 +252,8 @@ export default function App() {
           onTheme={pickTheme}
           accent={accent}
           onAccent={pickAccent}
+          cbMode={cbMode}
+          onCbMode={pickCbMode}
           onClose={() => setSettingsOpen(false)}
         />
       </Overlay>
@@ -678,7 +723,7 @@ function TranslatePop({ x, y, text, onClose }: { x: number; y: number; text: str
       {phase === "done" && (
         <>
           <div className="trtext">{out}</div>
-          <div className="trsrc">{src && src !== "en" ? "from " + src : "already english"}</div>
+          <div className="trsrc">{!src ? "translated" : src === "en" ? "already english" : "from " + src}</div>
         </>
       )}
     </div>
@@ -1424,6 +1469,13 @@ const FIELD_THEMES: { id: string; name: string }[] = [
   { id: "custom", name: "custom" },
 ];
 
+const CB_MODES: { id: string; name: string }[] = [
+  { id: "off", name: "off" },
+  { id: "protan", name: "protanopia" },
+  { id: "deutan", name: "deuteranopia" },
+  { id: "tritan", name: "tritanopia" },
+];
+
 function shade(hex: string, amt: number): string {
   const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
   if (!m) return hex;
@@ -1443,6 +1495,14 @@ const THEME_COLORS: Record<string, string> = {
   blue: "#56a6ff",
   rgb: "linear-gradient(90deg, #ff9f1c, #ff5d7a, #a06bff, #56a6ff, #3ddc97)",
 };
+
+// The single picked color feeding the CVD conversion: custom picker hex,
+// otherwise the named theme's hex. Never a gradient, never empty.
+function baseAccent(theme: string, accent: string): string {
+  if (theme === "custom") return isHex6(accent) ? accent : "#ff9f1c";
+  const c = THEME_COLORS[theme];
+  return isHex6(c) ? c : "#ff9f1c";
+}
 
 function Overlay({ show, label, role, onBackdrop, children }: {
   show: boolean;
@@ -1562,7 +1622,7 @@ function NumField({ id, value, onChange, min, max }: { id: string; value: string
   );
 }
 
-function SettingsModal({ account, app, logs, logError, send, theme, onTheme, accent, onAccent, onClose }: {
+function SettingsModal({ account, app, logs, logError, send, theme, onTheme, accent, onAccent, cbMode, onCbMode, onClose }: {
   account: AccountInfo | null;
   app: AppInfo | null;
   logs: string[];
@@ -1572,6 +1632,8 @@ function SettingsModal({ account, app, logs, logError, send, theme, onTheme, acc
   onTheme: (t: string) => void;
   accent: string;
   onAccent: (c: string) => void;
+  cbMode: string;
+  onCbMode: (m: string) => void;
   onClose: () => void;
 }) {
   const [tab, setTab] = React.useState<"themes" | "account" | "config" | "logs" | "credits">("themes");
@@ -1662,6 +1724,44 @@ function SettingsModal({ account, app, logs, logError, send, theme, onTheme, acc
                 ))}
               </div>
               {theme === "custom" && <CustomPicker value={accent} onChange={onAccent} />}
+              <div className="formrow" style={{ marginTop: 14 }}>
+                <span className="field-label">colorblind mode</span>
+                <div className="swatches">
+                  {CB_MODES.map((m) => (
+                    <button key={m.id} className={"swatch" + (cbMode === m.id ? " on" : "")} onClick={() => onCbMode(m.id)}>
+                      {m.name}
+                    </button>
+                  ))}
+                </div>
+                <p className="hint">converts your picked accent to the nearest color your deficiency can tell apart. colors that are already safe stay as picked. off restores your theme.</p>
+                {cbMode !== "off" && theme !== "rgb" && (() => {
+                  const base = baseAccent(theme, accent);
+                  const p = cvdPalette(base, cbMode);
+                  const same = p.accent.toLowerCase() === base.toLowerCase();
+                  return (
+                    <div className="cbprev">
+                      <span className="cbprev-row">
+                        <span className="cb-swatch" style={{ background: base }} title={base} />
+                        <span aria-hidden="true">-&gt;</span>
+                        <span className="cb-swatch" style={{ background: p.accent }} title={p.accent} />
+                        <span className="hint">{same ? "already safe, unchanged" : `shifted from ${base} to ${p.accent}`}</span>
+                      </span>
+                      <span className="cbprev-row">
+                        <span className="hint">as seen with {cbMode}:</span>
+                        <span className="cb-swatch" style={{ background: seenAs(p.accent, cbMode) }} title={seenAs(p.accent, cbMode)} />
+                        <span className="hint">twitch</span>
+                        <span className="cb-swatch" style={{ background: p.tw }} title={p.tw} />
+                        <span className="hint">tiktok</span>
+                        <span className="cb-swatch" style={{ background: p.tt }} title={p.tt} />
+                        <span className="hint">online</span>
+                        <span className="cb-swatch" style={{ background: p.ok }} title={p.ok} />
+                        <span className="hint">offline</span>
+                        <span className="cb-swatch" style={{ background: p.bad }} title={p.bad} />
+                      </span>
+                    </div>
+                  );
+                })()}
+              </div>
             </>
           )}
           {tab === "account" && (

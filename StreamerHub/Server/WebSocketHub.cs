@@ -27,6 +27,12 @@ public sealed class WebSocketHub
     string? _themeColor;
     static readonly HashSet<string> ThemeIds = new(StringComparer.OrdinalIgnoreCase)
         { "amber", "rose", "mint", "violet", "blue", "rgb" };
+    // Colorblind mode follows the same sync as theme: the dashboard sets it,
+    // the server holds it, and the stream overlay applies it so viewers see
+    // deficiency-safe colors.
+    string _cbMode = "off";
+    static readonly HashSet<string> CbModeIds = new(StringComparer.OrdinalIgnoreCase)
+        { "off", "protan", "deutan", "tritan" };
 
     static string? NormalizeHex(string? s)
     {
@@ -127,6 +133,16 @@ public sealed class WebSocketHub
                         _theme = id.ToLowerInvariant();
                         _themeColor = null;
                         Broadcast(new { type = "theme", id = _theme });
+                    }
+                    break;
+                }
+                case "cbmode":
+                {
+                    var id = doc.RootElement.TryGetProperty("id", out var cid) ? (cid.GetString() ?? "") : "";
+                    if (CbModeIds.Contains(id))
+                    {
+                        _cbMode = id.ToLowerInvariant();
+                        Broadcast(new { type = "cbmode", id = _cbMode });
                     }
                     break;
                 }
@@ -433,6 +449,7 @@ public sealed class WebSocketHub
         type = "init",
         theme = _theme,
         themeColor = _themeColor,
+        cbmode = _cbMode,
         app = new
         {
             name = _cfg.AppName,

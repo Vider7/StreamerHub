@@ -116,6 +116,7 @@ Viewers request songs with `!sr` plus a song name (links are rejected, names onl
 | Rearrange | Drag panels by their title bars (chat / stats / music) |
 | Resize activity | Drag the divider above the activity feed up or down |
 | Change theme | Gear icon → themes (amber, rose, mint, violet, blue, rgb, or Custom with your own color) |
+| Colorblind mode | Gear icon → themes → colorblind mode (off, protanopia, deuteranopia, tritanopia). Converts your picked accent to the nearest color the deficiency can tell apart (safe colors stay as picked), on your dashboard and the stream overlay. Off restores your theme |
 | Open it again | Double-click the tray icon (or run the exe again — it opens the dashboard if already running) |
 | Stop it | Right-click the tray icon → **Quit** |
 
