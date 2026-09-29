@@ -154,7 +154,7 @@ public sealed class TwitchAvatarService : IDisposable
                 var img = u.TryGetProperty("profile_image_url", out var ip) ? (ip.GetString() ?? "") : "";
                 if (login.Length == 0) continue;
                 seen.Add(login);
-                if (img.Length == 0)
+                if (!img.StartsWith("http", StringComparison.OrdinalIgnoreCase))
                 {
                     _cache[login] = ("", DateTime.UtcNow + MissTtl);
                     continue;

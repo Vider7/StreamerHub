@@ -95,6 +95,15 @@ public sealed class AppConfig
     public string AppName { get; set; } = "StreamerHub";
     public string Layout { get; set; } = "CSM";
     public int Port { get; set; } = 51324;
+    // Shared display state: the dashboards converge on these (the PC leads,
+    // remotes follow). Persisted so a restart doesn't reset everyone to amber.
+    public string Theme { get; set; } = "amber";
+    public string? ThemeColor { get; set; }
+    public string CbMode { get; set; } = "off";
+    // False = dashboard on this PC only. True = also open it to your local
+    // network (phone on the same Wi-Fi); the app opens the firewall port
+    // itself on startup (needs admin once - it tells you in the log if so).
+    public bool AllowNetwork { get; set; }
     public bool AutoOpenBrowser { get; set; } = true;
     // Set after the first-run tab opens, so restarts stay tab-free.
     public bool BrowserOpened { get; set; }

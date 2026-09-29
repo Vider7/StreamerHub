@@ -3,6 +3,7 @@ using System.IO.Compression;
 using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace StreamerHub;
 
@@ -97,6 +98,14 @@ public sealed class UpdateService : IDisposable
                 return;
             }
             latest = latest.TrimStart('v', 'V');
+            // The version becomes directory and file names under ~updates.
+            // Anything but plain x.y.z is rejected before it touches disk.
+            if (!Regex.IsMatch(latest, @"^\d+\.\d+\.\d+$"))
+            {
+                Log.Warn("updater: feed version is not plain x.y.z, ignoring");
+                SetState("error");
+                return;
+            }
             _latest = latest;
 
             if (CompareVersions(latest, CurrentVersion) <= 0)

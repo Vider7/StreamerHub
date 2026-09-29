@@ -130,6 +130,9 @@ export type HubState = {
   update: UpdateInfo;
   logs: string[];
   logError: string | null;
+  theme: string;
+  themeColor: string | null;
+  cbmode: string;
 };
 
 const emptyState: HubState = {
@@ -151,6 +154,9 @@ const emptyState: HubState = {
   update: { current: "", status: "idle", latest: "", ready: false },
   logs: [],
   logError: null,
+  theme: "",
+  themeColor: null,
+  cbmode: "off",
 };
 
 let chatSeq = 0;
@@ -249,7 +255,27 @@ export function useHub() {
             account: (i.account as AccountInfo) ?? null,
             logs: [],
             logError: null,
+            theme: typeof i.theme === "string" ? (i.theme as string) : "",
+            themeColor: typeof i.themeColor === "string" ? (i.themeColor as string) : null,
+            cbmode: typeof i.cbmode === "string" ? (i.cbmode as string) : "off",
           });
+          break;
+        }
+        case "theme": {
+          const id = msg.id as string;
+          const color = msg.color as unknown;
+          if (typeof id !== "string" || id.length === 0) break;
+          setState((s) => ({
+            ...s,
+            theme: id,
+            themeColor: id === "custom" && typeof color === "string" ? color : null,
+          }));
+          break;
+        }
+        case "cbmode": {
+          const id = msg.id as string;
+          if (typeof id !== "string" || id.length === 0) break;
+          setState((s) => ({ ...s, cbmode: id }));
           break;
         }
         case "config":

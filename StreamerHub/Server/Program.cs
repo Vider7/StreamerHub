@@ -1,7 +1,11 @@
 using System.Diagnostics;
+using System.Net;
+using System.Net.NetworkInformation;
+using System.Net.Sockets;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.StaticFiles;
 
 namespace StreamerHub;
 
@@ -53,6 +57,7 @@ internal static class Program
         var port = _cfg.Port;
         var portArg = args.FirstOrDefault(a => a.StartsWith("--port=", StringComparison.OrdinalIgnoreCase));
         if (portArg != null && int.TryParse(portArg.Split('=')[1], out var parsedPort)) port = parsedPort;
+        var host = _cfg.AllowNetwork ? "0.0.0.0" : "127.0.0.1";
 
         var hub = new ChatHub();
         var resolver = new YoutubeResolver(_cfg.Music);
@@ -370,7 +375,7 @@ internal static class Program
             ContentRootPath = AppPaths.BaseDir,
             WebRootPath = Path.Combine(AppPaths.BaseDir, "wwwroot"),
         });
-        builder.WebHost.UseUrls("http://127.0.0.1:" + port);
+        builder.WebHost.UseUrls("http://" + host + ":" + port);
         var app = builder.Build();
 
         app.UseWebSockets();
@@ -380,7 +385,19 @@ internal static class Program
         app.MapGet("/api/thumb/{id}", (HttpContext ctx, string id) => ThumbStream.Handle(ctx, id));
         app.MapGet("/api/translate", (HttpContext ctx, string? q, string? to) => Translate.Handle(ctx, q, to));
         app.UseDefaultFiles();
-        app.UseStaticFiles();
+        // Hashed /assets bundles are immutable for a year; entry pages
+        // (index, overlay, manifest) never cache, so phones and second tabs
+        // always boot the newest UI instead of a stale bundle.
+        app.UseStaticFiles(new StaticFileOptions
+        {
+            OnPrepareResponse = ctx =>
+            {
+                var path = ctx.Context.Request.Path.Value ?? "";
+                ctx.Context.Response.Headers.CacheControl = path.StartsWith("/assets", StringComparison.OrdinalIgnoreCase)
+                    ? "public, max-age=31536000, immutable"
+                    : "no-store";
+            }
+        });
 
         twitch.Start();
         tiktok.Start();
@@ -396,6 +413,93 @@ internal static class Program
             _cfg.Save();
         }
         Log.Info("listening on " + url);
+        if (_cfg.AllowNetwork)
+        {
+            EnsureFirewall(port);
+            foreach (var ip in LanIps())
+                Log.Info("on your network: http://" + ip + ":" + port);
+        }
+        else
+        {
+            // Bool flipped back off: remove the rule(s) we made (or the ones
+            // Windows made for us) so no firewall hole lingers.
+            RemoveFirewall();
+        }
+
+    // Opens the port in Windows Firewall so the dashboard works from the
+    // local network. Needs admin: without it netsh fails and we say so.
+    static void EnsureFirewall(int port)
+    {
+        try
+        {
+            var show = RunNetsh("advfirewall firewall show rule name=\"StreamerHub\"");
+            if (show.Contains("Rule Name:", StringComparison.OrdinalIgnoreCase)) return;
+            var add = RunNetsh("advfirewall firewall add rule name=\"StreamerHub\" dir=in action=allow protocol=TCP localport=" + port + " profile=private");
+            if (add.Contains("Ok.", StringComparison.OrdinalIgnoreCase))
+                Log.Info("firewall: opened TCP " + port + " (private networks)");
+            else
+                Log.Warn("firewall: could not open the port - run the app as admin once, then normally");
+        }
+        catch (Exception ex)
+        {
+            Log.Warn("firewall: " + ex.Message);
+        }
+    }
+
+    static void RemoveFirewall()
+    {
+        try
+        {
+            var show = RunNetsh("advfirewall firewall show rule name=\"StreamerHub\"");
+            if (!show.Contains("Rule Name:", StringComparison.OrdinalIgnoreCase)) return;
+            var del = RunNetsh("advfirewall firewall delete rule name=\"StreamerHub\"");
+            if (del.Contains("Ok.", StringComparison.OrdinalIgnoreCase))
+                Log.Info("firewall: removed StreamerHub rule(s) - back to PC-only");
+            else
+                Log.Warn("firewall: could not remove the rule(s) - run the app as admin once to finish reverting");
+        }
+        catch (Exception ex)
+        {
+            Log.Warn("firewall: " + ex.Message);
+        }
+    }
+
+    static string RunNetsh(string args)
+    {
+        var psi = new ProcessStartInfo
+        {
+            FileName = "netsh",
+            Arguments = args,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+        };
+        using var p = Process.Start(psi);
+        if (p == null) return "";
+        if (!p.WaitForExit(15000)) { try { p.Kill(); } catch { } return ""; }
+        return p.StandardOutput.ReadToEnd() + p.StandardError.ReadToEnd();
+    }
+
+    static IEnumerable<string> LanIps()
+    {
+        var out_ = new List<string>();
+        try
+        {
+            foreach (var ni in NetworkInterface.GetAllNetworkInterfaces())
+            {
+                if (ni.OperationalStatus != OperationalStatus.Up) continue;
+                foreach (var ua in ni.GetIPProperties().UnicastAddresses)
+                {
+                    if (ua.Address.AddressFamily != AddressFamily.InterNetwork || IPAddress.IsLoopback(ua.Address)) continue;
+                    var s = ua.Address.ToString();
+                    if (!out_.Contains(s)) out_.Add(s);
+                }
+            }
+        }
+        catch { }
+        return out_;
+    }
 
         var quitApp = new Action(() =>
         {

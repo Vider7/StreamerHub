@@ -14,6 +14,9 @@ public sealed class TikTokChatService : IDisposable
     CancellationTokenSource? _cts;
     int _generation;
     readonly ConcurrentDictionary<(string User, long GiftId), long> _streakTally = new();
+    // First-seen joiners, reset per session (Start). Rejoins are skipped so
+    // the counter and feed only care about new people.
+    readonly HashSet<string> _seenJoiners = new(StringComparer.OrdinalIgnoreCase);
 
     public event Action<bool, string>? ConnectionChanged;
 
@@ -34,6 +37,7 @@ public sealed class TikTokChatService : IDisposable
         }
         Log.Info($"tiktok: connecting to @{username}");
 
+        lock (_seenJoiners) _seenJoiners.Clear();
         var gen = Interlocked.Increment(ref _generation);
         _cts = new CancellationTokenSource();
         var token = _cts.Token;
@@ -184,7 +188,18 @@ public sealed class TikTokChatService : IDisposable
         };
         c.OnJoin += (_, e) =>
         {
+            var id = (e.User?.UniqueId ?? "").Trim();
+            if (id.Length == 0)
+            {
+                _hub.AddStat(0, 0, 0, 0, 0, 1);
+                return;
+            }
+            lock (_seenJoiners)
+            {
+                if (!_seenJoiners.Add(id)) return; // rejoin, skip
+            }
             _hub.AddStat(0, 0, 0, 0, 0, 1);
+            _hub.Activity($"{id} joined", "#A3C9AE", "join");
         };
         c.OnRoomUpdate += (_, e) =>
         {

@@ -204,8 +204,18 @@ public sealed class MusicEngine
         return liked;
     }
 
+    // Track ids reach the filesystem (precache/<id>.bin) and shell out to
+    // yt-dlp, so anything but a plain id never enters the engine.
+    static bool ValidId(string? id) =>
+        !string.IsNullOrEmpty(id) && id.Length <= 128
+        && id.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_');
+
     public string Request(TrackResult result, string by, ChatPlatform? platform)
     {
+        if (!ValidId(result.Id))
+        {
+            return "invalid track id";
+        }
         if (IsBlocked(result.Id))
         {
             return "that song is blocked";
@@ -333,7 +343,7 @@ public sealed class MusicEngine
 
     public void PlayNow(TrackResult result)
     {
-        if (IsBlocked(result.Id)) return;
+        if (!ValidId(result.Id) || IsBlocked(result.Id)) return;
         lock (_queue)
         {
             _generation++;
@@ -345,7 +355,7 @@ public sealed class MusicEngine
 
     public void Resume(TrackResult result)
     {
-        if (IsBlocked(result.Id)) return;
+        if (!ValidId(result.Id) || IsBlocked(result.Id)) return;
         SetNowPlaying(new Track { Result = result, RequestedBy = "you", RequestedPlatform = null });
     }
 

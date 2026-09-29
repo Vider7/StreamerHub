@@ -33,6 +33,11 @@ public sealed class YoutubeResolver
         {
             if (!Path.IsPathRooted(file)) file = Path.Combine(Directory.GetCurrentDirectory(), file);
         }
+        if (!file.EndsWith(".txt", StringComparison.OrdinalIgnoreCase))
+        {
+            Log.Warn("cookies file must be a .txt, ignoring: " + file);
+            return;
+        }
         if (File.Exists(file)) { args.Add("--cookies"); args.Add(file); }
         else Log.Warn("cookies file not found, ignoring: " + file);
     }

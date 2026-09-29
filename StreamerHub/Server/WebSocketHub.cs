@@ -23,7 +23,7 @@ public sealed class WebSocketHub
     public bool TikTokConnected { get; private set; }
     public long TwitchViewers { get; private set; } = -1;
     public UpdateService? Updater { get; set; }
-    string _theme = "amber";
+    string _theme;
     string? _themeColor;
     static readonly HashSet<string> ThemeIds = new(StringComparer.OrdinalIgnoreCase)
         { "amber", "rose", "mint", "violet", "blue", "rgb" };
@@ -56,6 +56,9 @@ public sealed class WebSocketHub
         _hub = hub;
         _music = music;
         _mpv = mpv;
+        _theme = ThemeIds.Contains(cfg.Theme ?? "") ? cfg.Theme.ToLowerInvariant() : "amber";
+        _themeColor = _theme == "custom" ? NormalizeHex(cfg.ThemeColor) : null;
+        _cbMode = CbModeIds.Contains(cfg.CbMode ?? "") ? cfg.CbMode.ToLowerInvariant() : "off";
         _musicFlush = new System.Threading.Timer(_ => FlushMusic(), null, 0, 60);
     }
 
@@ -75,6 +78,7 @@ public sealed class WebSocketHub
         using var ws = await ctx.WebSockets.AcceptWebSocketAsync();
         _clients[ws] = true;
         _sendLocks.TryAdd(ws, new SemaphoreSlim(1, 1));
+        var remote = ctx.Connection.RemoteIpAddress?.ToString() ?? "?";
         await SendTo(ws, BuildInit());
 
         var buffer = new byte[16384];
@@ -86,7 +90,7 @@ public sealed class WebSocketHub
                 if (result.MessageType == WebSocketMessageType.Close) break;
                 if (result.MessageType != WebSocketMessageType.Text) continue;
                 var json = Encoding.UTF8.GetString(buffer, 0, result.Count);
-                try { await HandleClientMessage(ws, json); }
+                try { await HandleClientMessage(ws, json, remote); }
                 catch (Exception ex) { Log.Warn("ws message: " + ex.Message); }
             }
         }
@@ -96,7 +100,7 @@ public sealed class WebSocketHub
         try { ws.Dispose(); } catch { }
     }
 
-    async Task HandleClientMessage(WebSocket ws, string json)
+    async Task HandleClientMessage(WebSocket ws, string json, string remote)
     {
         try
         {
@@ -119,6 +123,14 @@ public sealed class WebSocketHub
                 }
                 case "theme":
                 {
+                    // Sync marker: stale clients (pre-convergence bundles) replay
+                    // saved themes on every reconnect and would keep yanking the
+                    // house back. They don't send v, so they can't flip it.
+                    if (!doc.RootElement.TryGetProperty("v", out var vv) || vv.ValueKind != JsonValueKind.Number || vv.GetInt32() != 2)
+                    {
+                        Log.Info("theme: ignoring legacy client without sync marker (from " + remote + ")");
+                        break;
+                    }
                     var id = doc.RootElement.TryGetProperty("id", out var tid) ? (tid.GetString() ?? "") : "";
                     if (id.Equals("custom", StringComparison.OrdinalIgnoreCase)
                         && doc.RootElement.TryGetProperty("color", out var col)
@@ -126,22 +138,38 @@ public sealed class WebSocketHub
                     {
                         _theme = "custom";
                         _themeColor = hex;
+                        _cfg.Theme = _theme;
+                        _cfg.ThemeColor = hex;
+                        _cfg.Save();
+                        Log.Info("theme: custom " + hex + " (from " + remote + ")");
                         Broadcast(new { type = "theme", id = _theme, color = hex });
                     }
                     else if (ThemeIds.Contains(id))
                     {
                         _theme = id.ToLowerInvariant();
                         _themeColor = null;
+                        _cfg.Theme = _theme;
+                        _cfg.ThemeColor = null;
+                        _cfg.Save();
+                        Log.Info("theme: " + _theme + " (from " + remote + ")");
                         Broadcast(new { type = "theme", id = _theme });
                     }
                     break;
                 }
                 case "cbmode":
                 {
+                    if (!doc.RootElement.TryGetProperty("v", out var vv) || vv.ValueKind != JsonValueKind.Number || vv.GetInt32() != 2)
+                    {
+                        Log.Info("cbmode: ignoring legacy client without sync marker (from " + remote + ")");
+                        break;
+                    }
                     var id = doc.RootElement.TryGetProperty("id", out var cid) ? (cid.GetString() ?? "") : "";
                     if (CbModeIds.Contains(id))
                     {
                         _cbMode = id.ToLowerInvariant();
+                        _cfg.CbMode = _cbMode;
+                        _cfg.Save();
+                        Log.Info("cbmode: " + _cbMode + " (from " + remote + ")");
                         Broadcast(new { type = "cbmode", id = _cbMode });
                     }
                     break;
@@ -215,6 +243,7 @@ public sealed class WebSocketHub
                     _cfg.Music.DefaultVolume = v;
                     _cfg.Save();
                     (ActivePlayer?.Invoke() ?? _mpv).SetVolume(v);
+                    PublishMusic();
                     break;
                 }
                 case "like":
@@ -234,6 +263,7 @@ public sealed class WebSocketHub
                         _cfg.Music.Equalizer = bands;
                         _cfg.Save();
                         SetAfAll(AfNow());
+                        PublishMusic();
                     }
                     break;
                 }
@@ -242,6 +272,7 @@ public sealed class WebSocketHub
                     _cfg.Music.Loudness = doc.RootElement.GetProperty("on").GetBoolean();
                     _cfg.Save();
                     SetAfAll(AfNow());
+                    PublishMusic();
                     break;
                 }
                 case "crossfade":

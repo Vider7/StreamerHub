@@ -36,7 +36,7 @@ Everything your stream needs in one browser tab: chat from **Twitch** and **TikT
 
 ### Live stats
 
-Viewers, likes, gifts (with diamond value), follows, shares, joins. They update as they happen.
+Viewers, likes, gifts (with diamond value), follows, shares, joins. They update as they happen. Joins count first-timers only — rejoins are skipped, and new joiners get a feed line.
 
 ### Music
 
@@ -155,6 +155,7 @@ Show the live queue on stream: add a browser source in OBS pointing at `http://1
   "AppName": "StreamerHub",
   "Layout": "CSM",                  // panel order: C = chat, S = stats, M = music
   "Port": 51324,                    // the number used in the page address
+  "AllowNetwork": false,            // true = open the dashboard to the local network (phone section below)
   "AutoOpenBrowser": true,          // true = the page opens once on first run (tray icon reopens it later)
   "Twitch": {
     "Channel": "your-channel-name", // your Twitch channel name
@@ -215,6 +216,22 @@ Songs then resolve in about half a second. If the key ever stops working, the ap
 3. The song now has its own fader, mute button, and routing, like any other source. Keep the dashboard volume fairly high and use the OBS fader for stream level.
 
 No window to capture: the player has no UI. If Application Audio Capture is missing on your Windows version, fall back to **Audio Output Capture**, or set `Music.AudioDevice` to send music to its own output device.
+
+### Open it on your phone (same Wi-Fi)
+
+1. In `Config.json`, set `"AllowNetwork": true`, save, reopen the app.
+2. The app opens the firewall port itself on startup. If the log says it couldn't, right-click `StreamerHub.exe` → run as admin **once**, then normally after that.
+3. On your phone (same Wi-Fi), open `http://<your-pc-ip>:51324` — the app logs the exact addresses as `on your network:` on startup.
+
+Only on networks you trust: anyone on the network gets the full dashboard, including playback control. Leave `AllowNetwork` at `false` (the default) to keep it on the PC only. Flip it back to `false` and restart to remove the firewall rule again (needs admin once, same as creating it).
+
+**Run it like an app:** open the dashboard on your phone, then iPhone Share → Add to Home Screen (Android: menu → Add to Home screen). It launches standalone — its own icon, no browser tab, no pull-to-refresh.
+
+**Remote behavior:** phones show one panel at a time behind the burger menu (top-left), skip the setup wizard and update chip, and follow the house theme — the PC stays the main screen and every change applies to the one shared state.
+
+<p align="center">
+  <img src="docs/mobile-dashboard.png" alt="StreamerHub on a phone: music panel with transport, search, and queue" width="300" />
+</p>
 
 ---
 

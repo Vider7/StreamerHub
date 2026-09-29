@@ -2,6 +2,7 @@
   "AppName": "StreamerHub",
   "Layout": "CSM",
   "Port": 51324,
+  "AllowNetwork": false,
   "AutoOpenBrowser": true,
   "Twitch": {
     "Channel": "",

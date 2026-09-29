@@ -3,7 +3,23 @@ import { useHub, TrackResultShape, Track, Music, UpdateInfo, AppInfo, AccountInf
 import { fmt, fmtClock } from "./format";
 import { cvdPalette, resolveCvd, seenAs, isHex6 } from "./cvd";
 
-type StripDrag = { draggable: true; onDragStart: (e: React.DragEvent) => void; onDragEnd: (e: React.DragEvent) => void; title: string };
+type StripDrag = { draggable: boolean; onDragStart: (e: React.DragEvent) => void; onDragEnd: (e: React.DragEvent) => void; title: string };
+
+// Remote client (phone on the LAN): anything but loopback. Remotes get the
+// trimmed chrome - no setup wizard, update chip, or server tabs. The PC stays
+// the main man.
+const IS_REMOTE = !["localhost", "127.0.0.1", "[::1]", ""].includes(window.location.hostname);
+
+const M_PANELS = [
+  { id: "C", name: "chat" },
+  { id: "S", name: "stats" },
+  { id: "M", name: "music" },
+];
+
+const KNOWN_THEMES = new Set(["amber", "rose", "mint", "violet", "blue", "rgb", "custom"]);
+
+// All tabs on all screens: remotes read/write the same server state.
+const SETTING_TABS = (["themes", "account", "config", "logs", "credits"] as const);
 
 let dragGhost: HTMLElement | null = null;
 let dragKind: "panel" | "queue" | null = null;
@@ -30,8 +46,10 @@ export default function App() {
   };
 
   const strip = (letter: string): StripDrag => ({
-    draggable: true,
-    title: "drag to reorder panel",
+    // No rearranging on narrow screens: the burger owns navigation there,
+    // and a draggable strip would hijack touch scrolling on long-press.
+    draggable: !isNarrow,
+    title: !isNarrow ? "drag to reorder panel" : "",
     onDragStart: (e) => {
       dragKind = "panel";
       e.dataTransfer.setData("text/plain", letter);
@@ -65,10 +83,6 @@ export default function App() {
     },
   });
 
-  const stripC = useMemo(() => strip("C"), []);
-  const stripS = useMemo(() => strip("S"), []);
-  const stripM = useMemo(() => strip("M"), []);
-
   const dropProps = (letter: string) => ({
     "data-letter": letter,
     onDragOver: (e: React.DragEvent<HTMLElement>) => {
@@ -96,6 +110,56 @@ export default function App() {
   const [cbMode, setCbMode] = React.useState<string>(() => localStorage.getItem("sh.cbmode") ?? "off");
   const [settingsOpen, setSettingsOpen] = React.useState(false);
   const [wizSkip, setWizSkip] = React.useState(() => localStorage.getItem("sh.setup.skip") === "1");
+  // Narrow screens (portrait and landscape phones, small windows) show one
+  // panel at a time behind a burger menu. Matches the CSS stacking breakpoint.
+  const [isNarrow, setIsNarrow] = React.useState(() => window.matchMedia("(max-width: 980px)").matches);
+  const [mPanel, setMPanel] = React.useState<string>(() => {
+    const p = localStorage.getItem("sh.mpanel") ?? "M";
+    return p === "C" || p === "S" || p === "M" ? p : "M";
+  });
+  const [menuRender, setMenuRender] = React.useState(false);
+  const [menuOn, setMenuOn] = React.useState(false);
+  const menuTimer = React.useRef<number | undefined>(undefined);
+
+  const openMenu = () => {
+    if (menuTimer.current) window.clearTimeout(menuTimer.current);
+    setMenuRender(true);
+    requestAnimationFrame(() => requestAnimationFrame(() => setMenuOn(true)));
+  };
+  const closeMenu = () => {
+    setMenuOn(false);
+    if (menuTimer.current) window.clearTimeout(menuTimer.current);
+    menuTimer.current = window.setTimeout(() => setMenuRender(false), 170);
+  };
+
+  React.useEffect(() => {
+    if (!menuRender) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") closeMenu();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      if (menuTimer.current) window.clearTimeout(menuTimer.current);
+    };
+  }, [menuRender]);
+
+  React.useEffect(() => {
+    const mq = window.matchMedia("(max-width: 980px)");
+    const on = () => setIsNarrow(mq.matches);
+    mq.addEventListener("change", on);
+    return () => mq.removeEventListener("change", on);
+  }, []);
+
+  const pickMPanel = (p: string) => {
+    setMPanel(p);
+    localStorage.setItem("sh.mpanel", p);
+    closeMenu();
+  };
+
+  const stripC = useMemo(() => strip("C"), [isNarrow]);
+  const stripS = useMemo(() => strip("S"), [isNarrow]);
+  const stripM = useMemo(() => strip("M"), [isNarrow]);
 
   // One effect owns the color layer: theme accent (or custom picker) converted
   // through the CVD mode. Mode off = legacy behavior exactly.
@@ -136,26 +200,57 @@ export default function App() {
     }
   }, [theme, accent, cbMode]);
 
+  // The server is the source of truth for theme/cbmode (the PC leads, remotes
+  // follow). User picks send; everything else adopts silently, so two screens
+  // converge instead of fighting.
+  // The server is authoritative (it persists the house theme): on connect and
+  // on every broadcast, adopt. User picks send (below), so last pick wins and
+  // every screen converges. Nothing is ever pushed on connect, so a stale
+  // screen can never clobber the house on reopen.
   React.useEffect(() => {
-    if (state.connected && theme !== "custom") send({ type: "theme", id: theme });
-  }, [state.connected, theme]);
+    if (!state.connected) return;
+    const id = state.theme;
+    if (typeof id === "string" && KNOWN_THEMES.has(id) && id !== theme) {
+      setTheme(id);
+      localStorage.setItem("sh.theme", id);
+    }
+    if (state.theme === "custom" && typeof state.themeColor === "string" && /^#[0-9a-f]{6}$/i.test(state.themeColor)) {
+      const c = state.themeColor.toLowerCase();
+      if (c !== accent.toLowerCase()) {
+        setAccent(c);
+        localStorage.setItem("sh.accent", c);
+      }
+    }
+    const cb = state.cbmode;
+    if ((cb === "off" || cb === "protan" || cb === "deutan" || cb === "tritan") && cb !== cbMode) {
+      setCbMode(cb);
+      localStorage.setItem("sh.cbmode", cb);
+    }
+  }, [state.connected, state.theme, state.themeColor, state.cbmode]);
 
-  React.useEffect(() => {
-    if (state.connected) send({ type: "cbmode", id: cbMode });
-  }, [state.connected, cbMode]);
 
+
+  // Custom picker pushes only on real edits (flag), never on connect: an
+  // explicit-but-stale custom color must not clobber the house on reopen.
+  const customDirty = React.useRef(false);
   React.useEffect(() => {
-    if (!state.connected || theme !== "custom") return;
-    const t = window.setTimeout(() => send({ type: "theme", id: "custom", color: accent }), 250);
+    if (!state.connected || theme !== "custom" || !customDirty.current) return;
+    const t = window.setTimeout(() => {
+      customDirty.current = false;
+      send({ type: "theme", id: "custom", color: accent, v: 2 });
+    }, 250);
     return () => window.clearTimeout(t);
   }, [state.connected, theme, accent]);
 
   const pickTheme = (t: string) => {
     setTheme(t);
     localStorage.setItem("sh.theme", t);
+    if (t === "custom") customDirty.current = true; // color follows via the effect below
+    else send({ type: "theme", id: t, v: 2 });
   };
 
   const pickAccent = (c: string) => {
+    customDirty.current = true;
     setAccent(c);
     localStorage.setItem("sh.accent", c);
   };
@@ -169,6 +264,7 @@ export default function App() {
   const pickCbMode = (m: string) => {
     setCbMode(m);
     localStorage.setItem("sh.cbmode", m);
+    send({ type: "cbmode", id: m, v: 2 });
   };
 
   React.useEffect(() => {
@@ -183,6 +279,11 @@ export default function App() {
   return (
     <div className="app">
       <header className="topbar">
+        {isNarrow && (
+          <button className="burger" aria-label="switch panel" aria-expanded={menuOn} onClick={() => (menuRender && menuOn ? closeMenu() : openMenu())}>
+            <i className="fa-solid fa-bars" aria-hidden="true" />
+          </button>
+        )}
         <div className="brand">
           <span className="brand-dot" aria-hidden="true" />
           <span className="brand-name">{appName}</span>
@@ -191,20 +292,50 @@ export default function App() {
         <div className="topmeta">
           <ConnChip label="TW" ok={state.conn?.twitch.ok} detail={state.conn?.twitch.detail} />
           <ConnChip label="TT" ok={state.conn?.tiktok.ok} detail={state.conn?.tiktok.detail} />
-          <UpdateChip update={state.update} send={send} />
+          {!IS_REMOTE && <UpdateChip update={state.update} send={send} />}
         </div>
+        {isNarrow && menuRender && (
+          <>
+            <div className={"mbackdrop" + (menuOn ? " show" : "")} onClick={closeMenu} aria-hidden="true" />
+            <div className={"mmenu" + (menuOn ? " show" : "")} role="menu" aria-label="switch panel">
+              {M_PANELS.map((p) => (
+                <button key={p.id} role="menuitemradio" aria-checked={mPanel === p.id} className={"mitem" + (mPanel === p.id ? " on" : "")} onClick={() => pickMPanel(p.id)}>
+                  {p.name}
+                </button>
+              ))}
+              <div className="mdiv" aria-hidden="true" />
+              <button
+                role="menuitem"
+                className="mitem"
+                onClick={() => {
+                  closeMenu();
+                  setSettingsOpen(true);
+                  send({ type: "logs" });
+                }}
+              >
+                settings
+              </button>
+            </div>
+          </>
+        )}
       </header>
 
-      <main className="panels">
-        <section className={"panel chat" + (over === "C" ? " over" : "")} {...dropProps("C")} style={{ gridColumnStart: pos("C"), order: pos("C") }}>
-          <PanelChatM chat={state.chat} activity={state.activity} strip={stripC} send={send} />
-        </section>
-        <section className={"panel stats" + (over === "S" ? " over" : "")} {...dropProps("S")} style={{ gridColumnStart: pos("S"), order: pos("S") }}>
-          <PanelStatsM stats={state.stats} twitchViewers={state.twitchViewers} strip={stripS} />
-        </section>
-        <section className={"panel music" + (over === "M" ? " over" : "")} {...dropProps("M")} style={{ gridColumnStart: pos("M"), order: pos("M") }}>
-          <PanelMusic music={state.music} pos={state.pos} send={send} appCommand={state.app?.command ?? "!sr"} strip={stripM} results={state.results} />
-        </section>
+      <main className={"panels" + (isNarrow ? " single" : "")}>
+        {(!isNarrow || mPanel === "C") && (
+          <section className={"panel chat" + (over === "C" ? " over" : "")} {...dropProps("C")} style={isNarrow ? undefined : { gridColumnStart: pos("C"), order: pos("C") }}>
+            <PanelChatM chat={state.chat} activity={state.activity} strip={stripC} send={send} />
+          </section>
+        )}
+        {(!isNarrow || mPanel === "S") && (
+          <section className={"panel stats" + (over === "S" ? " over" : "")} {...dropProps("S")} style={isNarrow ? undefined : { gridColumnStart: pos("S"), order: pos("S") }}>
+            <PanelStatsM stats={state.stats} twitchViewers={state.twitchViewers} strip={stripS} />
+          </section>
+        )}
+        {(!isNarrow || mPanel === "M") && (
+          <section className={"panel music" + (over === "M" ? " over" : "")} {...dropProps("M")} style={isNarrow ? undefined : { gridColumnStart: pos("M"), order: pos("M") }}>
+            <PanelMusic music={state.music} pos={state.pos} send={send} appCommand={state.app?.command ?? "!sr"} strip={stripM} results={state.results} />
+          </section>
+        )}
       </main>
 
       <footer className="statusbar">
@@ -213,23 +344,25 @@ export default function App() {
         <div className="status-right">
           <span className="status-side">
             {state.update?.current ? "v" + state.update.current + " \u00B7 " : ""}
-            your settings and notes are saved in the app folder
+            {IS_REMOTE ? "remote view - changes apply to the main app" : "your settings and notes are saved in the app folder"}
           </span>
-          <button
-            className="gearbtn"
-            aria-label="open settings"
-            title="settings - themes, account, logs"
-            onClick={() => {
-              setSettingsOpen(true);
-              send({ type: "logs" });
-            }}
-          >
-            <i className="fa-solid fa-gear" aria-hidden="true" />
-          </button>
+          {!isNarrow && (
+            <button
+              className="gearbtn"
+              aria-label="open settings"
+              title="settings - themes, account, logs"
+              onClick={() => {
+                setSettingsOpen(true);
+                send({ type: "logs" });
+              }}
+            >
+              <i className="fa-solid fa-gear" aria-hidden="true" />
+            </button>
+          )}
         </div>
       </footer>
 
-      <Overlay show={!!(state.setup?.required && !wizSkip)} label="first time setup">
+      <Overlay show={!!(state.setup?.required && !wizSkip) && !IS_REMOTE} label="first time setup">
         <SetupWizard
           account={state.account}
           app={state.app}
@@ -921,7 +1054,7 @@ function PanelMusic({ music, pos, send, appCommand, strip, results }: { music: M
         <span className="strip-title">{"music"}</span>
         <span className="strip-meta">{music ? music.queue.length + " queued" : ""}</span>
         <button
-          className={"mini" + (music?.radio ? " accent" : "")}
+          className={"mini cfg" + (music?.radio ? " accent" : "")}
           title="when the queue runs out, keep playing similar songs"
           aria-pressed={!!music?.radio}
           onClick={() => send({ type: "radio", on: !music?.radio })}
@@ -929,7 +1062,7 @@ function PanelMusic({ music, pos, send, appCommand, strip, results }: { music: M
           {"Radio " + (music?.radio ? "On" : "Off")}
         </button>
         <button
-          className={"mini" + (music?.crossfade ? " accent" : "")}
+          className={"mini cfg" + (music?.crossfade ? " accent" : "")}
           title="fade the end of each song out and the next one in"
           aria-pressed={!!music?.crossfade}
           onClick={() => send({ type: "crossfade", on: !music?.crossfade })}
@@ -937,7 +1070,7 @@ function PanelMusic({ music, pos, send, appCommand, strip, results }: { music: M
           {"Xfade " + (music?.crossfade ? "On" : "Off")}
         </button>
         <button
-          className={"mini" + ((music?.requests ?? true) ? " accent" : "")}
+          className={"mini cfg" + ((music?.requests ?? true) ? " accent" : "")}
           title="let viewers request songs from chat (saved, stays as set after restart)"
           aria-pressed={music?.requests ?? true}
           onClick={() => send({ type: "requests", on: !(music?.requests ?? true) })}
@@ -1411,7 +1544,7 @@ const SearchBoxM = React.memo(function SearchBox({ send, results }: { send: (m: 
         <input
           className="text"
           value={q}
-          placeholder="search youtube..."
+          placeholder="search song..."
           onChange={(e) => {
             const v = e.target.value;
             setQ(v);
@@ -1713,7 +1846,7 @@ function SettingsModal({ account, app, logs, logError, send, theme, onTheme, acc
           <button className="modal-close" onClick={onClose} aria-label="close settings"><i className="fa-solid fa-xmark" aria-hidden="true" /></button>
         </div>
         <div className="tabs" role="tablist">
-          {(["themes", "account", "config", "logs", "credits"] as const).map((t) => (
+          {SETTING_TABS.map((t) => (
             <button key={t} className={"tab" + (tab === t ? " on" : "") + (t === "credits" ? " right" : "")} onClick={() => setTab(t)} role="tab" aria-selected={tab === t}>
               {t}
             </button>

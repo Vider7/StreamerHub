@@ -128,7 +128,66 @@ html,
 body,
 #root {
   height: 100%;
+  height: 100dvh;
   margin: 0;
+}
+
+body {
+  overflow-x: hidden;
+  overflow-x: clip;
+}
+
+/* ---------- touch behavior (phones) ---------- */
+
+/* no pull-to-refresh / swipe-navigation chaining: the page owns its scroll.
+   pan-x pan-y additionally kills pinch-zoom and double-tap-zoom gestures.
+   narrower elements (sliders, progress) keep their own stricter values. */
+html,
+body {
+  overscroll-behavior: none;
+  touch-action: pan-x pan-y;
+}
+
+/* taps never double-tap-zoom or hesitate; panning still works */
+button,
+.chip,
+.mini,
+.icon,
+.burger,
+.mitem,
+.cdot,
+.swatch,
+.tab,
+.cprev {
+  touch-action: manipulation;
+}
+
+/* volume slider only ever moves horizontally */
+input[type="range"].slider {
+  touch-action: pan-x;
+}
+
+/* Touch screens have no hover: a tapped control would otherwise keep its
+   :hover colors stuck until the next tap elsewhere. Restate resting values
+   here so taps flash :active and settle back. Desktop hover rules untouched. */
+@media (hover: none) {
+  .chip.upd:hover { color: var(--txt); background: var(--raised); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+  .icon:hover { background: transparent; color: var(--dim); }
+  .icon.nav:hover { color: var(--dim); border-color: transparent; background: transparent; }
+  .icon.block:hover { color: #ff6b6b; }
+  .play:hover { background: var(--accent); }
+  .mini:hover { color: var(--dim); border-color: var(--hair); background: var(--raised); }
+  .mini.accent:hover { color: var(--accent); background: var(--raised); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+  .qx:hover { color: var(--ghost); border-color: var(--hair); background: var(--raised); }
+  .clear-btn:hover { color: var(--dim); border-color: var(--hair); background: transparent; }
+  .gearbtn:hover { color: var(--ghost); border-color: var(--hair); background: transparent; }
+  .modal-close:hover { color: var(--dim); border-color: var(--hair); }
+  .tab:hover { color: var(--dim); }
+  .btn:hover { background: var(--accent); border-color: var(--accent); }
+  .btn.ghost:hover { background: transparent; border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+  .swatch:hover { color: var(--dim); border-color: var(--hair); }
+  .dayone:hover { color: var(--txt); }
+  .numspin button:hover { background: color-mix(in srgb, var(--accent) 8%, var(--raised)); border-color: var(--hair); color: var(--dim); }
 }
 
 body {
@@ -147,6 +206,7 @@ body {
 
 .app {
   height: 100%;
+  height: 100dvh;
   display: grid;
   grid-template-rows: auto 1fr auto;
   padding: 14px 16px 10px;
@@ -180,10 +240,99 @@ select:focus-visible {
 /* ---------- top bar ---------- */
 
 .topbar {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+.burger {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--hair);
+  border-radius: 8px;
+  background: var(--raised);
+  color: var(--txt);
+  font-size: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+
+.mbackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 58;
+  opacity: 0;
+  transition: opacity 150ms ease-out;
+}
+
+.mbackdrop.show {
+  opacity: 1;
+}
+
+.mmenu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 59;
+  display: flex;
+  flex-direction: column;
+  min-width: 150px;
+  padding: 6px;
+  gap: 2px;
+  background: var(--raised);
+  border: 1px solid var(--hair);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  opacity: 0;
+  transform: translateY(-6px) scale(0.98);
+  transform-origin: top left;
+  transition: opacity 150ms ease-out, transform 150ms ease-out;
+  pointer-events: none;
+}
+
+.mmenu.show {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+
+.mitem {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 9px 12px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--dim);
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.mitem.on {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+.mdiv {
+  height: 1px;
+  margin: 4px 8px;
+  background: var(--hair);
+}
+
+.panels.single {
+  grid-template-columns: 1fr;
+}
+
+.panels.single .panel {
+  min-height: 0;
+  height: 100%;
 }
 
 .brand {
@@ -218,6 +367,8 @@ select:focus-visible {
 .topmeta {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 8px;
 }
 
@@ -933,6 +1084,7 @@ a.who:hover .user {
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-wrap: wrap;
   gap: 8px;
   padding-top: 4px;
 }
@@ -1188,6 +1340,16 @@ input[type="range"].slider::-moz-range-thumb {
   touch-action: none;
   -webkit-user-select: none;
   user-select: none;
+}
+
+/* fat invisible grab zone: the visible strip is 4px, fingers are not */
+.eq-track::before {
+  content: "";
+  position: absolute;
+  top: -8px;
+  bottom: -8px;
+  left: -14px;
+  right: -14px;
 }
 
 .eq-track:focus-visible {
@@ -1651,7 +1813,8 @@ input[type="number"].text::-webkit-outer-spin-button {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .overlay, .overlay .modal {
+  .overlay, .overlay .modal,
+  .mbackdrop, .mmenu {
     transition: none;
   }
 }
@@ -1659,6 +1822,7 @@ input[type="number"].text::-webkit-outer-spin-button {
 .modal {
   width: min(560px, 100%);
   max-height: calc(100vh - 48px);
+  max-height: calc(100dvh - 48px);
   overflow-y: auto;
   background: var(--panel);
   border: 1px solid var(--hair);
@@ -1691,6 +1855,9 @@ input[type="number"].text::-webkit-outer-spin-button {
   color: var(--dim);
   font-size: 15px;
   line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   transition: color 120ms ease-out, border-color 120ms ease-out;
 }
 
@@ -1704,6 +1871,17 @@ input[type="number"].text::-webkit-outer-spin-button {
   gap: 4px;
   padding: 10px 16px 0;
   border-bottom: 1px solid var(--hair);
+  overflow-x: auto;
+}
+
+@media (max-width: 640px) {
+  .tabs {
+    padding: 10px 10px 0;
+  }
+  .tab {
+    padding: 6px 9px;
+    flex: none;
+  }
 }
 
 .tab {
@@ -1893,6 +2071,21 @@ input[type="number"].text::-webkit-outer-spin-button {
 /* ---------- responsive ---------- */
 
 @media (max-width: 980px) {
+  .topbar {
+    justify-content: center;
+  }
+  .topmeta {
+    display: none;
+  }
+  .burger {
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+  }
+  .brand {
+    margin-inline: auto;
+  }
   .panels {
     grid-template-columns: 1fr;
     overflow-y: auto;
@@ -1912,6 +2105,93 @@ input[type="number"].text::-webkit-outer-spin-button {
   .chip {
     padding: 4px 8px;
     font-size: 10px;
+  }
+}
+
+/* ---------- phones ---------- */
+
+@media (max-width: 640px) {
+  .app {
+    padding: 10px 10px 8px;
+    gap: 10px;
+  }
+  .panel {
+    min-height: 0;
+  }
+  .panel-inner {
+    padding: 10px;
+  }
+  /* library rows gain a third button (liked), requester name goes to make room */
+  .qrow .qby,
+  .rrow .rchan {
+    display: none;
+  }
+  .searchrow .text {
+    min-width: 0;
+  }
+  .eqpanel {
+    overflow-x: auto;
+  }
+  .eqrack {
+    grid-template-columns: repeat(10, minmax(30px, 1fr));
+  }
+  .overlay {
+    padding: 12px;
+  }
+  .statusbar {
+    flex-wrap: wrap;
+  }
+  /* transport stays one row: 7 buttons fit 320px+ without wrapping */
+  .transport {
+    flex-wrap: nowrap;
+    gap: 6px;
+  }
+  /* music strip (toggles + library nav icons) wraps instead of pushing off-screen */
+  .strip {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+  /* library/search rows: tighter buttons, durations go, titles keep the room */
+  .mini {
+    padding: 3px 8px;
+  }
+  .qrow .qdur,
+  .rrow .rdur {
+    display: none;
+  }
+  /* decluttered strips: title + working controls only.
+     toggles (radio/xfade/requests) and counters live on the PC. */
+  .strip .mini.cfg,
+  .strip-meta,
+  .strip .grip {
+    display: none;
+  }
+  /* rearranging is desktop-only: plain header on touch, no grab cursor */
+  .strip {
+    cursor: default;
+  }
+  .strip:active {
+    cursor: default;
+  }
+  .actbar {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+  /* EQ rack fits 320px: narrower columns, no negative margins */
+  .eqpanel {
+    margin-inline: 0;
+    padding: 10px 2px;
+  }
+  .eqrack {
+    grid-template-columns: repeat(10, minmax(24px, 1fr));
+  }
+  .eqval,
+  .eqfreq {
+    font-size: 9px;
+  }
+  /* iOS zooms the page on focus for inputs under 16px - match it */
+  input.text {
+    font-size: 16px;
   }
 }
 

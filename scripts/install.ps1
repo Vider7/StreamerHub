@@ -23,12 +23,30 @@ function Write-Ok([string]$msg) {
     Write-Host "    $msg" -ForegroundColor Green
 }
 
-function Fetch([string]$url, [string]$dest) {
+function Fetch([string]$url, [string]$dest, [string]$sha256) {
     if (Test-Path -LiteralPath $dest) { return }
     $tmp = "$dest.partial"
     Invoke-WebRequest -Uri $url -OutFile $tmp
+    $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $tmp).Hash.ToLowerInvariant()
+    if ($actual -ne $sha256.ToLowerInvariant()) {
+        Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
+        throw "hash mismatch for $(Split-Path $dest -Leaf): got $actual. Upstream likely released a new build - re-pin the hashes in this script (see below)."
+    }
     Move-Item -LiteralPath $tmp -Destination $dest
 }
+
+# Pinned helper binaries (trust-on-first-use, hashed 2026-09-29). Every fresh
+# download is SHA-256 verified; a mismatch fails closed. When upstream ships a
+# new build, download it yourself, hash it with
+#   (Get-FileHash -Algorithm SHA256 <file>).Hash
+# and update the pins here. Existing installs skip downloads entirely.
+$YtdlpUrl = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe'
+$YtdlpSha = '66674953FE251B89F4D08C5F0E35E0728679BD67AB3D7D05C0562AF101DD3E7A'
+$ZrUrl = 'https://www.7-zip.org/a/7zr.exe'
+$ZrSha = 'AD4C82FADCBDF93C03B4FC440F300509C7D60C5C2F4D183E35D9D70D6957037D'
+$MpvUrl = 'https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/20260928/mpv-x86_64-20260928-git-e470f8986e.7z'
+$MpvName = 'mpv-x86_64-20260928-git-e470f8986e.7z'
+$MpvSha = '6491BA670F836553FDD0D965C6E99ED8AA4053C1C79A5E4E30A1E127DA64714A'
 
 Write-Step 'Checking your computer'
 if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
@@ -71,19 +89,16 @@ New-Item -ItemType Directory -Force -Path $toolsDir | Out-Null
 
 Write-Step 'Getting the music helper (yt-dlp)'
 $ytd = Join-Path $toolsDir 'yt-dlp.exe'
-Fetch 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe' $ytd
+Fetch $YtdlpUrl $ytd $YtdlpSha
 Write-Ok "ready at $ytd"
 
 Write-Step 'Getting the audio app (mpv)'
 $mpvDir = Join-Path $toolsDir 'mpv'
 try {
-    $rel = Invoke-RestMethod -Uri 'https://api.github.com/repos/shinchiro/mpv-winbuild-cmake/releases/latest' -Headers @{ 'User-Agent' = 'StreamerHub-installer' }
-    $asset = $rel.assets | Where-Object { $_.name -like 'mpv-x86_64-*.7z' } | Select-Object -First 1
-    if (-not $asset) { throw 'no mpv release build found' }
     $z7 = Join-Path $toolsDir '7zr.exe'
-    Fetch 'https://www.7-zip.org/a/7zr.exe' $z7
-    $archive = Join-Path $toolsDir $asset.name
-    Fetch $asset.browser_download_url $archive
+    Fetch $ZrUrl $z7 $ZrSha
+    $archive = Join-Path $toolsDir $MpvName
+    Fetch $MpvUrl $archive $MpvSha
     $staging = Join-Path $toolsDir 'mpv-stage'
     New-Item -ItemType Directory -Force -Path $staging | Out-Null
     & $z7 x $archive "-o$staging" -y | Out-Null
