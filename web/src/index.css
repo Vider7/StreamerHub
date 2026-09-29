@@ -1532,6 +1532,39 @@ input[type="number"].text::-webkit-outer-spin-button {
   object-fit: cover;
 }
 
+.pfp.small {
+  width: 44px;
+  height: 44px;
+}
+
+.dayone-head {
+  color: var(--dim);
+  font-size: 11px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+}
+
+.dayone-row {
+  display: flex;
+  justify-content: center;
+  gap: 28px;
+  margin-top: 10px;
+}
+
+.dayone {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  color: var(--txt);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.dayone:hover {
+  color: var(--accent);
+}
+
 /* ---------- status bar ---------- */
 
 .statusbar {

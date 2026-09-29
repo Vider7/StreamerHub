@@ -1855,6 +1855,17 @@ function SettingsModal({ account, app, logs, logError, send, theme, onTheme, acc
             <div className="credits">
               <img className="pfp" src="./pfp.png" alt="Vida" />
               <p>made by <span className="who">Vida.</span></p>
+              <p className="dayone-head">here since day one</p>
+              <div className="dayone-row">
+                <a className="dayone" href="https://www.tiktok.com/@happylimpleg" target="_blank" rel="noreferrer">
+                  <img className="pfp small" src="./dayone-happy.jpeg" alt="HappyLimpLeg" />
+                  <span>HappyLimpLeg</span>
+                </a>
+                <a className="dayone" href="https://www.tiktok.com/@devon8509twitch" target="_blank" rel="noreferrer">
+                  <img className="pfp small" src="./dayone-devon.jpeg" alt="Devon" />
+                  <span>Devon</span>
+                </a>
+              </div>
             </div>
           )}
         </div>
