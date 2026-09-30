@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
@@ -56,8 +57,13 @@ public sealed class WebSocketHub
         _hub = hub;
         _music = music;
         _mpv = mpv;
-        _theme = ThemeIds.Contains(cfg.Theme ?? "") ? cfg.Theme.ToLowerInvariant() : "amber";
+        // "custom" is a real saved theme (the picker stores Theme=custom +
+        // ThemeColor=hex): it must survive a restart instead of falling back
+        // to amber and throwing the saved color away.
+        _theme = (cfg.Theme ?? "").ToLowerInvariant();
+        if (_theme != "custom" && !ThemeIds.Contains(_theme)) _theme = "amber";
         _themeColor = _theme == "custom" ? NormalizeHex(cfg.ThemeColor) : null;
+        if (_theme == "custom" && _themeColor == null) _theme = "amber";
         _cbMode = CbModeIds.Contains(cfg.CbMode ?? "") ? cfg.CbMode.ToLowerInvariant() : "off";
         _musicFlush = new System.Threading.Timer(_ => FlushMusic(), null, 0, 60);
     }
@@ -96,6 +102,7 @@ public sealed class WebSocketHub
         }
         catch { }
         _clients.TryRemove(ws, out _);
+        CancelSearch(ws);
         if (_sendLocks.TryRemove(ws, out var gate)) gate.Dispose();
         try { ws.Dispose(); } catch { }
     }
@@ -352,25 +359,57 @@ public sealed class WebSocketHub
         }
     }
 
+    // One in-flight dashboard search per socket: typing supersedes the
+    // previous query, so cancel its yt-dlp run instead of stacking processes
+    // that fight prefetch for CPU. Only the latest query answers.
+    readonly ConcurrentDictionary<WebSocket, CancellationTokenSource> _searchCts = new();
+
+    void CancelSearch(WebSocket ws)
+    {
+        if (_searchCts.TryRemove(ws, out var old))
+        {
+            try { old.Cancel(); } catch { }
+            try { old.Dispose(); } catch { }
+        }
+    }
+
     async Task _execSearch(WebSocket ws, string q)
     {
+        CancelSearch(ws);
         if (string.IsNullOrWhiteSpace(q))
         {
             await SendTo(ws, new { type = "search", q = "", results = Array.Empty<object>() });
             return;
         }
+        var cts = new CancellationTokenSource();
+        _searchCts[ws] = cts;
+        var ct = cts.Token;
+        var sw = Stopwatch.StartNew();
         try
         {
-            var results = await _music.SearchAsync(q);
+            var results = await _music.SearchAsync(q, ct);
+            if (ct.IsCancellationRequested) return;
+            if (!_searchCts.TryGetValue(ws, out var cur) || cur != cts) return;
             await SendTo(ws, new { type = "search", q, results = results.Select(r => new
             {
                 id = r.Id, title = r.Title, channel = r.Channel, duration = r.Duration, durationLabel = r.DurationLabel,
             }) });
+            Log.Info("search answered '" + q.Trim() + "': " + results.Count + " in " + sw.ElapsedMilliseconds + "ms");
+        }
+        catch (OperationCanceledException)
+        {
+            Log.Info("search superseded: " + q.Trim());
         }
         catch (Exception ex)
         {
+            if (ct.IsCancellationRequested) return;
             Log.Warn("search failed: " + ex.Message);
             await SendTo(ws, new { type = "search", q, results = Array.Empty<object>() });
+        }
+        finally
+        {
+            if (_searchCts.TryGetValue(ws, out var cur2) && cur2 == cts) _searchCts.TryRemove(ws, out _);
+            try { cts.Dispose(); } catch { }
         }
     }
 

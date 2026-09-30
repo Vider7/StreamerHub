@@ -205,7 +205,7 @@ Out of the box every song resolves through yt-dlp, which takes a few seconds. Sk
 
 1. Open `https://www.youtube.com` in your browser and view the page source (`Ctrl+U`).
 2. Search for `INNERTUBE_API_KEY` and copy the `AIza...` value right after it (same public key for everyone, no account needed).
-3. Paste it into `YoutubeApiKey` in `Config.json`, save, reopen.
+3. Close the app first, paste it into `YoutubeApiKey` in `Config.json`, save, reopen. (The app rewrites the file while it runs, so edits made while it's open get lost — including the key.)
 
 Songs then resolve in about half a second. If the key ever stops working, the app quietly falls back to yt-dlp.
 

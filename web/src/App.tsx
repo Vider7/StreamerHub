@@ -333,7 +333,7 @@ export default function App() {
         )}
         {(!isNarrow || mPanel === "M") && (
           <section className={"panel music" + (over === "M" ? " over" : "")} {...dropProps("M")} style={isNarrow ? undefined : { gridColumnStart: pos("M"), order: pos("M") }}>
-            <PanelMusic music={state.music} pos={state.pos} send={send} appCommand={state.app?.command ?? "!sr"} strip={stripM} results={state.results} />
+            <PanelMusic music={state.music} pos={state.pos} send={send} appCommand={state.app?.command ?? "!sr"} strip={stripM} results={state.results} searchQ={state.searchQ} />
           </section>
         )}
       </main>
@@ -1042,7 +1042,7 @@ const PanelStatsM = React.memo(function PanelStats({ stats, twitchViewers, strip
   );
 });
 
-function PanelMusic({ music, pos, send, appCommand, strip, results }: { music: Music | null; pos: { position: number; playing: boolean }; send: (m: Record<string, unknown>) => void; appCommand: string; strip: StripDrag; results: TrackResultShape[] }) {
+function PanelMusic({ music, pos, send, appCommand, strip, results, searchQ }: { music: Music | null; pos: { position: number; playing: boolean }; send: (m: Record<string, unknown>) => void; appCommand: string; strip: StripDrag; results: TrackResultShape[]; searchQ: string }) {
   const [eqOpen, setEqOpen] = React.useState(false);
   const [historyOpen, setHistoryOpen] = React.useState(false);
   const [likedOpen, setLikedOpen] = React.useState(false);
@@ -1097,7 +1097,7 @@ function PanelMusic({ music, pos, send, appCommand, strip, results }: { music: M
       {blockedOpen && <BlockedListM blocked={music?.blocked ?? []} send={send} onClose={() => setBlockedOpen(false)} />}
       {eqOpen && <EqRowM music={music} send={send} onClose={() => setEqOpen(false)} />}
       <div className="section-label">find a track</div>
-      <SearchBoxM send={send} results={results} />
+      <SearchBoxM send={send} results={results} searchQ={searchQ} />
       <div className="section-label">up next</div>
       <QueueListM music={music} send={send} />
     </div>
@@ -1514,7 +1514,7 @@ const BlockedListM = React.memo(function BlockedList({ blocked, send, onClose }:
   );
 });
 
-const SearchBoxM = React.memo(function SearchBox({ send, results }: { send: (m: Record<string, unknown>) => void; results: TrackResultShape[] }) {
+const SearchBoxM = React.memo(function SearchBox({ send, results, searchQ }: { send: (m: Record<string, unknown>) => void; results: TrackResultShape[]; searchQ: string }) {
   const [q, setQ] = React.useState("");
   const t = React.useRef<number | undefined>(undefined);
   const lastSent = React.useRef("");
@@ -1535,8 +1535,13 @@ const SearchBoxM = React.memo(function SearchBox({ send, results }: { send: (m: 
     send({ type: "search", q: "" });
   };
 
-  const searching = q.trim().length > 0 && results.length === 0 && settledFor.current !== q.trim();
-  const noResults = q.trim().length > 0 && results.length === 0 && settledFor.current === q.trim();
+  // Results belong to whatever query the server answered (searchQ), not to
+  // whatever is typed now: a slow older answer must never overwrite the
+  // current query's list.
+  const fresh = searchQ.trim() === q.trim();
+  const searching = q.trim().length > 0 && (!fresh || (results.length === 0 && settledFor.current !== q.trim()));
+  const noResults = q.trim().length > 0 && fresh && results.length === 0 && settledFor.current === q.trim();
+  const shown = fresh ? results : [];
 
   return (
     <div>
@@ -1573,9 +1578,9 @@ const SearchBoxM = React.memo(function SearchBox({ send, results }: { send: (m: 
       </div>
       {searching && <div className="empty">searching...</div>}
       {noResults && <div className="empty">no results for that</div>}
-      {results.length > 0 && q.trim().length > 0 && (
+      {shown.length > 0 && q.trim().length > 0 && (
         <div className="resultlist">
-          {results.map((r) => (
+          {shown.map((r) => (
             <div className="rrow" key={r.id}>
               <TrackThumb id={r.id} className="rart" alt="" />
               <span className="rtitle" title={r.title}>{r.title}</span>

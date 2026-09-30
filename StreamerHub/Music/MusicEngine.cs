@@ -242,8 +242,8 @@ public sealed class MusicEngine
         return "queued at #" + _queue.Count + ": " + result.Title;
     }
 
-    public async Task<List<TrackResult>> SearchAsync(string query)
-        => await _resolver.SearchAsync(query);
+    public async Task<List<TrackResult>> SearchAsync(string query, CancellationToken ct = default)
+        => await _resolver.SearchAsync(query, ct);
 
     public async Task<string?> ResolveAudioUrlAsync(string id)
         => await _resolver.ResolveAudioUrlAsync(id);
@@ -321,7 +321,11 @@ public sealed class MusicEngine
         lock (_queue)
         {
             cur = NowPlaying?.Result.Id;
-            upcoming = _queue.Take(3).Select(t => t.Result.Id).ToList();
+            // Full audio download for the next track only: three parallel
+            // full downloads split bandwidth and all finish slower, which is
+            // exactly what double-skips run into. Tracks further out only
+            // need their URL warmed, which PrewarmNext already covers.
+            upcoming = _queue.Take(1).Select(t => t.Result.Id).ToList();
         }
         if (upcoming.Count > 0)
         {
@@ -542,9 +546,12 @@ public sealed class MusicEngine
     {
         try
         {
-            var anchor = PickRadioAnchor(currentId);
-            var found = await _resolver.SearchRelatedAsync(anchor);
-            var pick = PickRadioTrack(found, anchor);
+            var pick = TryPopRadioPool(currentId);
+            if (pick == null)
+            {
+                var found = await _resolver.SearchRelatedAsync(currentId);
+                pick = PickRadioTrack(found, currentId);
+            }
             if (pick == null) return;
             lock (_queue)
             {
@@ -574,23 +581,24 @@ public sealed class MusicEngine
         }
     }
 
-    string PickRadioAnchor(string fallback)
+    // Leftover candidates from the last related-mix fetch (YouTube returns
+    // up to 30, radio plays one). Popping these first means most radio
+    // transitions cost zero yt-dlp runs.
+    readonly List<TrackResult> _radioPool = new();
+
+    Track? TryPopRadioPool(string anchor)
     {
-        // Occasionally seed the related-mix from a recently played song so
-        // radio wanders a little without leaving the neighborhood.
+        List<TrackResult> pool;
         lock (_queue)
         {
-            if (_history.Count >= 4 && Random.Shared.NextDouble() < 0.15)
-            {
-                var pool = _history.TakeLast(4).ToList();
-                if (pool.Count > 0)
-                {
-                    var id = pool[Random.Shared.Next(pool.Count)].Result.Id;
-                    if (!string.IsNullOrEmpty(id) && id != fallback) return id;
-                }
-            }
+            if (_radioPool.Count == 0) return null;
+            pool = _radioPool.ToList();
+            _radioPool.Clear();
         }
-        return fallback;
+        var pick = PickRadioTrack(pool, anchor);
+        if (pick == null) return null;
+        Log.Info("radio pooled: " + pick.Result.Title);
+        return pick;
     }
 
     Track? PickRadioTrack(List<TrackResult> found, string anchor)
@@ -642,6 +650,17 @@ public sealed class MusicEngine
             roll -= maxRank - e.Rank;
             if (roll < 0) { winner = e.R; break; }
         }
+        // Stash the runners-up for the next fill instead of fetching again.
+        lock (_queue)
+        {
+            _radioPool.Clear();
+            foreach (var e in eligible)
+            {
+                if (e.R.Id == winner.Id) continue;
+                if (_radioPool.Count >= 30) break;
+                _radioPool.Add(e.R);
+            }
+        }
         return new Track { Result = winner, RequestedBy = "radio", RequestedPlatform = null };
     }
 
@@ -662,11 +681,14 @@ public sealed class MusicEngine
             lock (_queue) _radioBusy = false;
             return;
         }
-        anchor = PickRadioAnchor(anchor);
         try
         {
-            var found = await _resolver.SearchRelatedAsync(anchor);
-            var pick = PickRadioTrack(found, anchor);
+            var pick = TryPopRadioPool(anchor);
+            if (pick == null)
+            {
+                var found = await _resolver.SearchRelatedAsync(anchor);
+                pick = PickRadioTrack(found, anchor);
+            }
             var added = false;
             if (pick != null)
             {

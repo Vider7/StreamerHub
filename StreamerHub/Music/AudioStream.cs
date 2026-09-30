@@ -11,7 +11,11 @@ public static class AudioStream
 
     public static async Task Handle(MusicEngine music, HttpContext ctx, string id)
     {
-        if (AudioCache.TryGet(id, out var cachedPath, out var cachedType))
+        var rangeHeader = ctx.Request.Headers.Range.ToString();
+        var ready = AudioCache.TryGet(id, out var cachedPath, out var cachedType);
+        var growing = AudioCache.TryGetActive(id, out var partialPath, out var partialType);
+        Log.Info("stream " + id + " range='" + rangeHeader + "' precached=" + ready + " growing=" + growing);
+        if (ready)
         {
             Log.Info("serving precached audio for " + id);
             await ServeFileAsync(ctx, cachedPath, cachedType);
@@ -19,10 +23,12 @@ public static class AudioStream
         }
         // A skip just landed on a track whose download is already running:
         // play the growing local file instead of opening a second, slower
-        // live stream. Ranged (seek) requests still use the live path since
-        // the tail may not have those bytes yet.
-        var rangeHeader = ctx.Request.Headers.Range.ToString();
-        if (string.IsNullOrEmpty(rangeHeader) && AudioCache.TryGetActive(id, out var partialPath, out var partialType))
+        // live stream. Real seeks (a range into the middle) still use the
+        // live path since the tail may not have those bytes yet; a plain
+        // "bytes=0-" open-from-start takes the growing file too.
+        var fromStart = string.IsNullOrEmpty(rangeHeader)
+            || rangeHeader.Trim().Equals("bytes=0-", StringComparison.OrdinalIgnoreCase);
+        if (fromStart && growing)
         {
             var gotBytes = await WaitForBytesAsync(partialPath, 256 * 1024, TimeSpan.FromSeconds(6));
             if (AudioCache.TryGet(id, out cachedPath, out cachedType))
@@ -38,6 +44,7 @@ public static class AudioStream
                 return;
             }
         }
+        Log.Info("stream " + id + ": cold, resolving live");
         var url = await ResolveAsync(music, id);
         if (url == null)
         {

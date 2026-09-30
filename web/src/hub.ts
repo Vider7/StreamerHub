@@ -126,6 +126,7 @@ export type HubState = {
   notice: string;
   applying: boolean;
   results: TrackResultShape[];
+  searchQ: string;
   layout: string;
   update: UpdateInfo;
   logs: string[];
@@ -150,6 +151,7 @@ const emptyState: HubState = {
   notice: "",
   applying: false,
   results: [],
+  searchQ: "",
   layout: "CSM",
   update: { current: "", status: "idle", latest: "", ready: false },
   logs: [],
@@ -249,6 +251,7 @@ export function useHub() {
               : { position: 0, playing: false }),
             notice: (i as Record<string, string>).notice ?? "",
             results: [],
+            searchQ: "",
             layout: ((i.app as AppInfo)?.layout ?? "CSM") as string,
             update: (i.update as UpdateInfo) ?? { current: "", status: "idle", latest: "", ready: false },
             setup: (i.setup as SetupInfo) ?? null,
@@ -362,7 +365,7 @@ export function useHub() {
           setState((s) => ({ ...s, twitchViewers: msg.value as number }));
           break;
         case "search":
-          setState((s) => ({ ...s, results: (msg.results as TrackResultShape[] ?? []) }));
+          setState((s) => ({ ...s, results: (msg.results as TrackResultShape[] ?? []), searchQ: (msg.q as string ?? "") }));
           break;
         case "layout":
           setState((s) => ({ ...s, layout: (msg.order as string) ?? s.layout }));
