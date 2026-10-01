@@ -10,6 +10,10 @@ type StripDrag = { draggable: boolean; onDragStart: (e: React.DragEvent) => void
 // the main man.
 const IS_REMOTE = !["localhost", "127.0.0.1", "[::1]", ""].includes(window.location.hostname);
 
+// Chat !volume bounds. Mirrors CommandEngine.VolumeMin/Max on the server.
+const CHAT_VOL_MIN = 5;
+const CHAT_VOL_MAX = 50;
+
 const M_PANELS = [
   { id: "C", name: "chat" },
   { id: "S", name: "stats" },
@@ -2173,7 +2177,7 @@ function SettingsModal({ account, app, logs, logError, send, theme, onTheme, acc
                 <span className="group-label">mod chat commands</span>
                 <div className="formrow">
                   <div className="modtoggles">
-                    <button className={"mini cfg" + (modVol ? " accent" : "")} onClick={() => setModVol((v) => !v)} aria-pressed={modVol} title="let mods set volume from chat (!volume 5-25)">!volume</button>
+                    <button className={"mini cfg" + (modVol ? " accent" : "")} onClick={() => setModVol((v) => !v)} aria-pressed={modVol} title={"let mods set volume from chat (!volume " + CHAT_VOL_MIN + "-" + CHAT_VOL_MAX + ")"}>!volume</button>
                     <button className={"mini cfg" + (modReq ? " accent" : "")} onClick={() => setModReq((v) => !v)} aria-pressed={modReq} title="let mods open and close requests (!requests on/off)">!requests</button>
                     <button className={"mini cfg" + (modTrans ? " accent" : "")} onClick={() => setModTrans((v) => !v)} aria-pressed={modTrans} title="let mods pause and resume (!play / !pause)">play/pause</button>
                     <button className={"mini cfg" + (modSkip ? " accent" : "")} onClick={() => setModSkip((v) => !v)} aria-pressed={modSkip} title="let mods skip and remove songs (!skip / !revoke / !dq)">skip</button>

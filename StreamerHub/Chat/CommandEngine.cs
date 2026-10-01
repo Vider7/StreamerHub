@@ -2,6 +2,13 @@ namespace StreamerHub;
 
 public sealed class CommandEngine
 {
+    // Chat volume bounds, in one place so the validation, the clamp and the
+    // UI hint cannot drift apart. Low enough that a mod cannot deafen the
+    // stream, high enough to actually turn it down.
+    public const int VolumeMin = 5;
+    public const int VolumeMax = 50;
+    public static readonly string VolumeUsage = "usage: !volume " + VolumeMin + "-" + VolumeMax;
+
     readonly MusicConfig _cfg;
     readonly MusicEngine _player;
     readonly ChatHub _hub;
@@ -45,9 +52,9 @@ public sealed class CommandEngine
             if (verb == "!volume")
             {
                 if (!_cfg.ModVolume) { Reply(platform, "!volume is turned off"); return; }
-                if (parts.Length < 2 || !int.TryParse(parts[1].Trim(), out var v) || v < 5 || v > 25)
+                if (parts.Length < 2 || !int.TryParse(parts[1].Trim(), out var v) || v < VolumeMin || v > VolumeMax)
                 {
-                    Reply(platform, "usage: !volume 5-25");
+                    Reply(platform, VolumeUsage);
                     return;
                 }
                 VolumeChanged?.Invoke(v);

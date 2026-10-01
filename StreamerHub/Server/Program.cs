@@ -118,7 +118,7 @@ internal static class Program
         commands.PersistRequested += () => _cfg.Save();
         commands.VolumeChanged += v =>
         {
-            v = Math.Clamp(v, 5, 25);
+            v = Math.Clamp(v, CommandEngine.VolumeMin, CommandEngine.VolumeMax);
             if (v != _cfg.Music.DefaultVolume) Log.Info("volume: " + _cfg.Music.DefaultVolume + " -> " + v + " (chat)");
             _cfg.Music.DefaultVolume = v;
             _cfg.Save();
