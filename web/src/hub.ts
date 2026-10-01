@@ -49,6 +49,17 @@ export type AppInfo = {
   globalCooldownSeconds: number;
   autoNextRadio: boolean;
   requestsOpen: boolean;
+  modVolume: boolean;
+  modRequests: boolean;
+  modTransport: boolean;
+  modSkip: boolean;
+  fastPath: string;
+  fastPathDetail: string;
+  crossfadeSeconds: number;
+  audioDevice: string;
+  port: number;
+  allowNetwork: boolean;
+  lanIps: string[];
   defaultVolume: number;
   tiktokUser: string;
   twitchChannel: string;
@@ -91,6 +102,7 @@ export type Music = {
   requests: boolean;
   loop: boolean;
   crossfade: boolean;
+  crossfadeSeconds: number;
   eq: number[];
   loudness: boolean;
 };
@@ -386,7 +398,20 @@ export function useHub() {
           break;
         }
         case "crossfade":
-          setState((s) => ({ ...s, music: s.music ? { ...s.music, crossfade: msg.on as boolean } : s.music }));
+          setState((s) => ({
+            ...s,
+            music: s.music
+              ? {
+                  ...s.music,
+                  crossfade: msg.on as boolean,
+                  // The toggle also carries the current length so the label
+                  // updates the moment the value changes in settings.
+                  ...(typeof msg.crossfadeSeconds === "number"
+                    ? { crossfadeSeconds: msg.crossfadeSeconds as number }
+                    : {}),
+                }
+              : s.music,
+          }));
           break;
         case "update":
           setState((s) => ({ ...s, update: msg as unknown as UpdateInfo }));

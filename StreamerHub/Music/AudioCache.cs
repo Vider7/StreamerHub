@@ -123,6 +123,9 @@ public static class AudioCache
             using var req = new HttpRequestMessage(HttpMethod.Get, url);
             req.Headers.Add("User-Agent", UA);
             req.Headers.TryAddWithoutValidation("Referer", "https://www.youtube.com/");
+            // Player-API URLs 403 a bare GET; an open-ended range streams
+            // the whole file.
+            req.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(0, null);
             using var resp = await Http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead);
             if (!resp.IsSuccessStatusCode || !GenAlive(nextId, gen)) return;
             active.ContentType = resp.Content.Headers.ContentType?.ToString();

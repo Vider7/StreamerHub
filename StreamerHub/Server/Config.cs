@@ -33,6 +33,12 @@ public sealed class MusicConfig
     public bool AutoNextRadio { get; set; } = true;
     public bool LoopOne { get; set; }
     public bool RequestsOpen { get; set; } = true;
+    // Which chat mod commands are live. All default on; the streamer turns
+    // off whatever they don't want mods touching.
+    public bool ModVolume { get; set; } = true;
+    public bool ModRequests { get; set; } = true;
+    public bool ModTransport { get; set; } = true;
+    public bool ModSkip { get; set; } = true;
     public string MpvPath { get; set; } = "";
     public string AudioDevice { get; set; } = "";
     public double[] Equalizer { get; set; } = new double[EqBands];

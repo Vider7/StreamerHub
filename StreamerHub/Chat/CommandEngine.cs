@@ -20,6 +20,11 @@ public sealed class CommandEngine
         _resolver = resolver;
     }
 
+    public Action? PersistRequested;
+    public Action<int>? VolumeChanged;
+    public Action<bool>? PauseChanged;
+    public Action<bool>? RequestsChanged;
+
     public void Handle(ChatPlatform platform, string username, string message, bool isMod = false, bool isBroadcaster = false)
     {
         if (string.IsNullOrWhiteSpace(message)) return;
@@ -30,6 +35,47 @@ public sealed class CommandEngine
 
         var isStaff = isMod;
 
+        if (verb == "!volume" || verb == "!requests" || verb == "!play" || verb == "!pause")
+        {
+            if (!isStaff)
+            {
+                Reply(platform, "that command is mods only");
+                return;
+            }
+            if (verb == "!volume")
+            {
+                if (!_cfg.ModVolume) { Reply(platform, "!volume is turned off"); return; }
+                if (parts.Length < 2 || !int.TryParse(parts[1].Trim(), out var v) || v < 5 || v > 25)
+                {
+                    Reply(platform, "usage: !volume 5-25");
+                    return;
+                }
+                VolumeChanged?.Invoke(v);
+                Reply(platform, "volume set to " + v);
+                return;
+            }
+            if (verb == "!requests")
+            {
+                if (!_cfg.ModRequests) { Reply(platform, "!requests is turned off"); return; }
+                var arg = parts.Length > 1 ? parts[1].Trim().ToLowerInvariant() : "";
+                if (arg != "on" && arg != "off")
+                {
+                    Reply(platform, "usage: !requests on/off");
+                    return;
+                }
+                var on = arg == "on";
+                _cfg.RequestsOpen = on;
+                PersistRequested?.Invoke();
+                RequestsChanged?.Invoke(on);
+                Reply(platform, "requests " + (on ? "opened" : "closed"));
+                return;
+            }
+            if (!_cfg.ModTransport) { Reply(platform, verb + " is turned off"); return; }
+            PauseChanged?.Invoke(verb == "!pause");
+            Reply(platform, verb == "!pause" ? "paused" : "playing");
+            return;
+        }
+
         if (verb == "!skip" || verb == "!revoke" || verb == "!dq")
         {
             if (!isStaff)
@@ -37,6 +83,7 @@ public sealed class CommandEngine
                 Reply(platform, "that command is mods only");
                 return;
             }
+            if (!_cfg.ModSkip) { Reply(platform, verb + " is turned off"); return; }
             if (verb == "!dq")
             {
                 if (parts.Length < 2 || string.IsNullOrWhiteSpace(parts[1]))

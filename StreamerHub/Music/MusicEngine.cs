@@ -245,8 +245,12 @@ public sealed class MusicEngine
     public async Task<List<TrackResult>> SearchAsync(string query, CancellationToken ct = default)
         => await _resolver.SearchAsync(query, ct);
 
-    public async Task<string?> ResolveAudioUrlAsync(string id)
-        => await _resolver.ResolveAudioUrlAsync(id);
+public async Task<string?> ResolveAudioUrlAsync(string id)
+   => await _resolver.ResolveAudioUrlAsync(id);
+
+   // Used by the stream handler's retry: bypasses the fast path entirely.
+   public async Task<string?> ResolveAudioUrlViaYtDlpAsync(string id)
+   => await _resolver.ResolveViaYtDlpForcedAsync(id);
 
     void BeginOrNext()
     {
@@ -501,6 +505,38 @@ public sealed class MusicEngine
         return removed;
     }
 
+    public void ClearQueue()
+    {
+        lock (_queue)
+        {
+            if (_queue.Count == 0) return;
+            _queue.Clear();
+        }
+        StateChanged?.Invoke();
+        PrefetchNext();
+    }
+
+    // Jump a queued song straight to now-playing: the interrupted track goes
+    // back to history (so Prev can bring it back), the pick plays now.
+    public string? PlayAt(int index)
+    {
+        Track? pick = null;
+        lock (_queue)
+        {
+            if (index < 0 || index >= _queue.Count) return null;
+            pick = _queue[index];
+            _queue.RemoveAt(index);
+            if (NowPlaying != null)
+            {
+                _history.Add(NowPlaying);
+                if (_history.Count > 30) _history.RemoveAt(0);
+            }
+        }
+        if (pick == null) return null;
+        SetNowPlaying(pick);
+        return pick.Result.Title;
+    }
+
     public void Move(int from, int to)
     {
         lock (_queue)
@@ -549,7 +585,11 @@ public sealed class MusicEngine
             var pick = TryPopRadioPool(currentId);
             if (pick == null)
             {
-                var found = await _resolver.SearchRelatedAsync(currentId);
+                var found = await FetchRadioMixAsync(currentId);
+                // Empty means the mix timed out or failed. PickRadioTrack
+                // would clear the pool and set the anchor even with nothing
+                // to give, so only replace the pool on a real result set.
+                if (found.Count == 0) return;
                 pick = PickRadioTrack(found, currentId);
             }
             if (pick == null) return;
@@ -581,10 +621,54 @@ public sealed class MusicEngine
         }
     }
 
+    // Radio mix fetch, hard-capped. A radio fill is background work: if YouTube
+    // is slow the right answer is "keep using the pool", not a 20s stall on
+    // every advance. Below interactive resolves and searches in priority, and
+    // bounded so a hung fetch cannot hold the queue hostage.
+    static readonly TimeSpan RadioMixTimeout = TimeSpan.FromSeconds(8);
+    static readonly SemaphoreSlim RadioMixGate = new(1, 1);
+
+    async Task<List<TrackResult>> FetchRadioMixAsync(string anchor)
+    {
+        if (!await RadioMixGate.WaitAsync(RadioMixTimeout))
+        {
+            Log.Warn("radio mix for " + anchor + ": another mix still running after "
+                + (int)RadioMixTimeout.TotalSeconds + "s, skipping (pool kept)");
+            return new List<TrackResult>();
+        }
+        try
+        {
+            var task = _resolver.SearchRelatedAsync(anchor);
+            var done = await Task.WhenAny(task, Task.Delay(RadioMixTimeout));
+            if (done != task)
+            {
+                // Abandoned, not cancelled: the yt-dlp process finishes on its
+                // own and gets logged, we just stop waiting on it.
+                Log.Warn("radio mix for " + anchor + ": timed out after "
+                    + (int)RadioMixTimeout.TotalSeconds + "s, keeping current pool");
+                return new List<TrackResult>();
+            }
+            return await task;
+        }
+        catch (Exception ex)
+        {
+            Log.Warn("radio mix for " + anchor + " failed: " + ex.GetType().Name + ": " + ex.Message);
+            return new List<TrackResult>();
+        }
+        finally
+        {
+            RadioMixGate.Release();
+        }
+    }
+
     // Leftover candidates from the last related-mix fetch (YouTube returns
     // up to 30, radio plays one). Popping these first means most radio
-    // transitions cost zero yt-dlp runs.
+    // transitions cost zero yt-dlp runs. The pool belongs to the anchor it
+    // was fetched for: play something else yourself and it goes stale, so a
+    // mismatched anchor drops it and fetches fresh instead of queuing the
+    // old genre forever.
     readonly List<TrackResult> _radioPool = new();
+    string? _radioPoolAnchor;
 
     Track? TryPopRadioPool(string anchor)
     {
@@ -592,11 +676,19 @@ public sealed class MusicEngine
         lock (_queue)
         {
             if (_radioPool.Count == 0) return null;
+            if (_radioPoolAnchor != null && _radioPoolAnchor != anchor)
+            {
+                Log.Info("radio pool is for another song; fetching fresh for the new one");
+                _radioPool.Clear();
+                _radioPoolAnchor = null;
+                return null;
+            }
             pool = _radioPool.ToList();
             _radioPool.Clear();
         }
         var pick = PickRadioTrack(pool, anchor);
         if (pick == null) return null;
+        lock (_queue) _radioPoolAnchor = pick.Result.Id;
         Log.Info("radio pooled: " + pick.Result.Title);
         return pick;
     }
@@ -654,6 +746,7 @@ public sealed class MusicEngine
         lock (_queue)
         {
             _radioPool.Clear();
+            _radioPoolAnchor = winner.Id;
             foreach (var e in eligible)
             {
                 if (e.R.Id == winner.Id) continue;
@@ -686,7 +779,15 @@ public sealed class MusicEngine
             var pick = TryPopRadioPool(anchor);
             if (pick == null)
             {
-                var found = await _resolver.SearchRelatedAsync(anchor);
+                var found = await FetchRadioMixAsync(anchor);
+                if (found.Count == 0)
+                {
+                    // Timeout or failure: leave the pool untouched so the next
+                    // advance can retry, and stop here rather than looping.
+                    Notice?.Invoke("radio: could not load new suggestions, will retry");
+                    lock (_queue) _radioBusy = false;
+                    return;
+                }
                 pick = PickRadioTrack(found, anchor);
             }
             var added = false;

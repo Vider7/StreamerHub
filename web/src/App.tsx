@@ -19,7 +19,7 @@ const M_PANELS = [
 const KNOWN_THEMES = new Set(["amber", "rose", "mint", "violet", "blue", "rgb", "custom"]);
 
 // All tabs on all screens: remotes read/write the same server state.
-const SETTING_TABS = (["themes", "account", "config", "logs", "credits"] as const);
+const SETTING_TABS = (["music", "chat", "themes", "network", "logs", "credits"] as const);
 
 let dragGhost: HTMLElement | null = null;
 let dragKind: "panel" | "queue" | null = null;
@@ -1063,11 +1063,11 @@ function PanelMusic({ music, pos, send, appCommand, strip, results, searchQ }: {
         </button>
         <button
           className={"mini cfg" + (music?.crossfade ? " accent" : "")}
-          title="fade the end of each song out and the next one in"
+          title={"fade the end of each song out and the next one in" + (music?.crossfade ? " - currently " + (music?.crossfadeSeconds ?? 4) + "s overlap" : "")}
           aria-pressed={!!music?.crossfade}
           onClick={() => send({ type: "crossfade", on: !music?.crossfade })}
         >
-          {"Xfade " + (music?.crossfade ? "On" : "Off")}
+          {"Xfade " + (music?.crossfade ? "On · " + (music?.crossfadeSeconds ?? 4) + "s" : "Off")}
         </button>
         <button
           className={"mini cfg" + ((music?.requests ?? true) ? " accent" : "")}
@@ -1117,6 +1117,24 @@ function NowPlaying({ music, pos, send }: { music: Music | null; pos: { position
   const serverPos = pos.position;
   const playing = pos.playing;
   playingRef.current = playing;
+
+  // Space toggles play/pause from anywhere that is not a text field or a
+  // button, so it never eats a space someone is typing or activates a
+  // focused control twice.
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== " " || e.repeat || e.ctrlKey || e.altKey || e.metaKey) return;
+      const el = document.activeElement as HTMLElement | null;
+      const tag = el?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if (el?.isContentEditable) return;
+      if (tag === "BUTTON" || tag === "A" || el?.getAttribute("role") === "button" || el?.getAttribute("role") === "slider") return;
+      e.preventDefault();
+      send({ type: "pause", paused: playingRef.current });
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [send]);
 
   useEffect(() => {
     if (music && typeof music.volume === "number" && music.volume !== vol) setVol(music.volume);
@@ -1418,6 +1436,11 @@ const QueueListM = React.memo(function QueueList({ music, send }: { music: Music
       if (Number.isFinite(f) && over !== null && f !== over) send({ type: "move", from: f, to: over });
       finish();
     }}>
+      {q.length > 0 && (
+        <div className="qactions">
+          <button className="mini" onClick={() => send({ type: "clearqueue" })}>clear queue</button>
+        </div>
+      )}
       {q.map((t, i) => (
         <div className={"qrow" + (over === i ? " dropto" : "")} key={t.id + i}
           draggable
@@ -1429,6 +1452,7 @@ const QueueListM = React.memo(function QueueList({ music, send }: { music: Music
           <span className="qtitle" title={t.title}>{t.title}</span>
           <span className="qby">{t.by}</span>
           <span className="qdur mono">{t.durationLabel}</span>
+          <button className="qgo" onClick={() => send({ type: "playat", index: i })} aria-label="play now" title="play now - interrupts the current track"><i className="fa-solid fa-play" aria-hidden="true" /></button>
           <button className="qx" onClick={() => send({ type: "remove", index: i })} aria-label="remove from queue" title="remove from queue"><i className="fa-solid fa-xmark" aria-hidden="true" /></button>
         </div>
       ))}
@@ -1472,7 +1496,54 @@ const HistoryListM = React.memo(function HistoryList({ history, send, onClose }:
   );
 });
 
+// Unliking is undoable for a minute. The server toggle is immediate and
+// saved, so the undo window is purely local: removed songs stay in the list
+// marked as going away, with a live countdown, an undo button and an x to
+// drop them now. They disappear on their own when the timer runs out.
+const UNDO_LINGER_MS = 60000;
+
+type Removed = { t: Track; until: number };
+
 const LikedListM = React.memo(function LikedList({ liked, send, onClose }: { liked: Track[]; send: (m: Record<string, unknown>) => void; onClose: () => void }) {
+  const [removed, setRemoved] = React.useState<Removed[]>([]);
+  const [tick, setTick] = React.useState(0);
+
+  // One interval for the whole list. Re-arms whenever the set changes so a
+  // song unliked right after a sweep still gets its own full minute.
+  React.useEffect(() => {
+    if (removed.length === 0) return;
+    const t = window.setInterval(() => {
+      setTick((n) => n + 1);
+      setRemoved((cur) => {
+        const now = Date.now();
+        const kept = cur.filter((r) => r.until > now);
+        return kept.length === cur.length ? cur : kept;
+      });
+    }, 1000);
+    return () => window.clearInterval(t);
+  }, [removed.length]);
+
+  const unlike = (t: Track) => {
+    send({ type: "like", id: t.id, title: t.title, channel: t.channel, duration: t.duration });
+    setRemoved((cur) => [
+      ...cur.filter((r) => r.t.id !== t.id),
+      { t, until: Date.now() + UNDO_LINGER_MS },
+    ]);
+  };
+
+  // Undo is a second toggle, so it only works while the row is still here.
+  const undo = (t: Track) => {
+    send({ type: "like", id: t.id, title: t.title, channel: t.channel, duration: t.duration });
+    setRemoved((cur) => cur.filter((r) => r.t.id !== t.id));
+  };
+
+  const drop = (id: string) => setRemoved((cur) => cur.filter((r) => r.t.id !== id));
+
+  // A song can come back on its own (undo from the heart button, or another
+  // client re-liking it), so drop any lingering row for a track that is
+  // liked again instead of showing it twice.
+  const lingering = removed.filter((r) => !liked.some((l) => l.id === r.t.id));
+
   return (
     <div>
       <ListHead icon="fa-solid fa-heart" title="liked" count={liked.length} onClose={onClose} />
@@ -1485,10 +1556,23 @@ const LikedListM = React.memo(function LikedList({ liked, send, onClose }: { lik
           <span className="qdur mono">{t.durationLabel}</span>
           <button className="mini" onClick={() => playTrack(send, t)} aria-label="play liked song">{"play"}</button>
           <button className="mini" onClick={() => send({ type: "queue", id: t.id, title: t.title, channel: t.channel, duration: t.duration })} aria-label="queue liked song">{"queue"}</button>
-          <button className="mini" onClick={() => send({ type: "like", id: t.id, title: t.title, channel: t.channel, duration: t.duration })} aria-label="remove from liked">{"unlike"}</button>
+          <button className="mini" onClick={() => unlike(t)} aria-label="remove from liked">{"unlike"}</button>
         </div>
       ))}
-      {liked.length === 0 && <div className="empty">no liked songs yet</div>}
+      {lingering.map((r) => {
+        const left = Math.max(0, Math.ceil((r.until - Date.now()) / 1000));
+        return (
+          <div className="qrow undo" key={"undo-" + r.t.id}>
+            <TrackThumb id={r.t.id} className="qart" alt="" />
+            <span className="qtitle" title={r.t.title}>{r.t.title}</span>
+            <span className="qby">{"unliked, " + left + "s to undo"}</span>
+            <span className="qdur mono">{r.t.durationLabel}</span>
+            <button className="mini accent" onClick={() => undo(r.t)} aria-label="undo unlike">{"undo"}</button>
+            <button className="qx" onClick={() => drop(r.t.id)} aria-label="remove now" title="remove it now, no undo"><i className="fa-solid fa-xmark" aria-hidden="true" /></button>
+          </div>
+        );
+      })}
+      {liked.length === 0 && lingering.length === 0 && <div className="empty">no liked songs yet</div>}
       </div>
     </div>
   );
@@ -1528,8 +1612,14 @@ const SearchBoxM = React.memo(function SearchBox({ send, results, searchQ }: { s
     send({ type: "search", q: text });
   };
 
+  // Picking keeps the search up: queue as many as you want, then clear
+  // the box with the X when done. Empty box = list hides itself.
   const pick = (r: TrackResultShape, kind: "play" | "queue") => {
     send({ type: kind, id: r.id, title: r.title, channel: r.channel, duration: r.duration });
+  };
+
+  const clearBox = () => {
+    if (t.current) window.clearTimeout(t.current);
     lastSent.current = "";
     setQ("");
     send({ type: "search", q: "" });
@@ -1575,6 +1665,9 @@ const SearchBoxM = React.memo(function SearchBox({ send, results, searchQ }: { s
             }
           }}
         />
+        {q.length > 0 && (
+          <button className="qx" onClick={clearBox} aria-label="clear search" title="clear search"><i className="fa-solid fa-xmark" aria-hidden="true" /></button>
+        )}
       </div>
       {searching && <div className="empty">searching...</div>}
       {noResults && <div className="empty">no results for that</div>}
@@ -1658,6 +1751,11 @@ function Overlay({ show, label, role, onBackdrop, children }: {
 }) {
   const [render, setRender] = React.useState(show);
   const [on, setOn] = React.useState(false);
+  // Touch fires emulated mouse events after pointerup: if content collapses
+  // under the finger (e.g. clearing the log box), the press can land on the
+  // backdrop even though it started inside. Only close when the press both
+  // started and ended on the backdrop.
+  const downOnBackdrop = React.useRef(false);
   React.useEffect(() => {
     if (show) {
       setRender(true);
@@ -1672,7 +1770,11 @@ function Overlay({ show, label, role, onBackdrop, children }: {
   if (!render) return null;
   return (
     <div className={"overlay" + (on ? " show" : "")} role={role ?? "dialog"} aria-modal="true" aria-label={label}
-      onMouseDown={(e) => { if (e.target === e.currentTarget) onBackdrop?.(); }}>
+      onMouseDown={(e) => { downOnBackdrop.current = e.target === e.currentTarget; }}
+      onMouseUp={(e) => {
+        if (downOnBackdrop.current && e.target === e.currentTarget) onBackdrop?.();
+        downOnBackdrop.current = false;
+      }}>
       {children}
     </div>
   );
@@ -1722,6 +1824,7 @@ function SetupWizard({ account, app, send, onSkip }: { account: AccountInfo | nu
           <div className="formrow">
             <label className="field-label" htmlFor="wz-tt">tiktok username <span className="req">*</span></label>
             <input id="wz-tt" className="text" value={tt} onChange={(e) => setTt(e.target.value)} placeholder="yourname" />
+            <p className="hint">one is enough, or both. chat and requests work on whichever you fill in.</p>
           </div>
           <div className="formrow">
             <label className="field-label" htmlFor="wz-cid">twitch client id</label>
@@ -1781,7 +1884,7 @@ function SettingsModal({ account, app, logs, logError, send, theme, onTheme, acc
   onCbMode: (m: string) => void;
   onClose: () => void;
 }) {
-  const [tab, setTab] = React.useState<"themes" | "account" | "config" | "logs" | "credits">("themes");
+  const [tab, setTab] = React.useState<"music" | "chat" | "themes" | "network" | "logs" | "credits">("music");
   const [tw, setTw] = React.useState(account?.twitchChannel ?? "");
   const [tt, setTt] = React.useState(account?.tiktokUser ?? "");
   const [cid, setCid] = React.useState("");
@@ -1793,6 +1896,15 @@ function SettingsModal({ account, app, logs, logError, send, theme, onTheme, acc
   const [maxQuery, setMaxQuery] = React.useState(String(app?.maxQueryLength ?? 100));
   const [rateLimit, setRateLimit] = React.useState(String(app?.rateLimitSeconds ?? 15));
   const [cooldown, setCooldown] = React.useState(String(app?.globalCooldownSeconds ?? 5));
+  const [apiKey, setApiKey] = React.useState("");
+  const [allowNet, setAllowNet] = React.useState(app?.allowNetwork ?? false);
+  const [port, setPort] = React.useState(String(app?.port ?? 51324));
+  const [defVol, setDefVol] = React.useState(String(app?.defaultVolume ?? 25));
+  const [xfadeSecs, setXfadeSecs] = React.useState(String(app?.crossfadeSeconds ?? 4));
+  const [modVol, setModVol] = React.useState(app?.modVolume ?? true);
+  const [modReq, setModReq] = React.useState(app?.modRequests ?? true);
+  const [modTrans, setModTrans] = React.useState(app?.modTransport ?? true);
+  const [modSkip, setModSkip] = React.useState(app?.modSkip ?? true);
   const [err, setErr] = React.useState("");
 
   React.useEffect(() => {
@@ -1805,6 +1917,14 @@ function SettingsModal({ account, app, logs, logError, send, theme, onTheme, acc
       setMaxQuery(String(app.maxQueryLength ?? 100));
       setRateLimit(String(app.rateLimitSeconds ?? 15));
       setCooldown(String(app.globalCooldownSeconds ?? 5));
+      setAllowNet(app.allowNetwork ?? false);
+      setPort(String(app.port ?? 51324));
+      setDefVol(String(app.defaultVolume ?? 25));
+      setXfadeSecs(String(app.crossfadeSeconds ?? 4));
+      setModVol(app.modVolume ?? true);
+      setModReq(app.modRequests ?? true);
+      setModTrans(app.modTransport ?? true);
+      setModSkip(app.modSkip ?? true);
     }
   }, [account, app]);
 
@@ -1812,16 +1932,28 @@ function SettingsModal({ account, app, logs, logError, send, theme, onTheme, acc
     if (tab === "logs") send({ type: "logs" });
   }, [tab]);
 
-  const save = () => {
+  const saveChat = () => {
     setErr("");
-    send({
+    const payload: Record<string, unknown> = {
       type: "config",
       twitchChannel: tw.trim(),
       tiktokUser: tt.trim(),
       twitchClientId: cid.trim(),
       twitchClientSecret: sec.trim(),
-      musicCommand: cmd.trim(),
       cookiesFile: cook.trim(),
+    };
+    // Write-only: blank keeps whatever key is already set.
+    if (apiKey.trim()) payload.youtubeApiKey = apiKey.trim();
+    send(payload);
+    setApiKey("");
+  };
+
+  const saveNetwork = () => {
+    setErr("");
+    send({
+      type: "config",
+      allowNetwork: allowNet,
+      port: num(port, 51324),
     });
   };
 
@@ -1840,6 +1972,12 @@ function SettingsModal({ account, app, logs, logError, send, theme, onTheme, acc
       maxQueryLength: num(maxQuery, 100),
       rateLimitSeconds: num(rateLimit, 15),
       globalCooldownSeconds: num(cooldown, 5),
+      defaultVolume: Math.min(100, Math.max(0, num(defVol, 25))),
+      crossfadeSeconds: Math.min(12, Math.max(0.5, Number(xfadeSecs) || 4)),
+      modVolume: modVol,
+      modRequests: modReq,
+      modTransport: modTrans,
+      modSkip: modSkip,
     });
   };
 
@@ -1909,7 +2047,7 @@ function SettingsModal({ account, app, logs, logError, send, theme, onTheme, acc
               </div>
             </>
           )}
-          {tab === "account" && (
+          {tab === "chat" && (
             <>
               <div className="formrow">
                 <label className="field-label" htmlFor="st-tw">twitch channel <span className="req">*</span></label>
@@ -1918,6 +2056,7 @@ function SettingsModal({ account, app, logs, logError, send, theme, onTheme, acc
               <div className="formrow">
                 <label className="field-label" htmlFor="st-tt">tiktok username <span className="req">*</span></label>
                 <input id="st-tt" className="text" value={tt} onChange={(e) => setTt(e.target.value)} placeholder="yourname" />
+                <p className="hint">one is enough, or both. chat and requests work on whichever you fill in.</p>
               </div>
               <div className="formrow">
                 <label className="field-label" htmlFor="st-cid">twitch client id</label>
@@ -1928,50 +2067,119 @@ function SettingsModal({ account, app, logs, logError, send, theme, onTheme, acc
                 <input id="st-sec" className="text" type="password" value={sec} onChange={(e) => setSec(e.target.value)} />
               </div>
               <div className="formrow">
-                <label className="field-label" htmlFor="st-cmd">chat request command</label>
-                <input id="st-cmd" className="text" value={cmd} onChange={(e) => setCmd(e.target.value)} />
-              </div>
-              <div className="formrow">
                 <label className="field-label" htmlFor="st-cook">youtube cookies file</label>
                 <input id="st-cook" className="text" value={cook} onChange={(e) => setCook(e.target.value)} placeholder="full path to a cookies.txt" />
               </div>
+              <div className="formrow">
+                <label className="field-label" htmlFor="st-key">youtube player key</label>
+                <input id="st-key" className="text" type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="leave blank to keep what is set" autoComplete="off" />
+                <p className="hint"><span className="fpdot" style={{ background: app?.fastPath === "ok" ? "var(--green)" : app?.fastPath === "failing" ? "var(--red)" : "var(--ghost)" }} aria-hidden="true" />{app?.fastPathDetail ?? "checking song resolve health..."}</p>
+              </div>
               {err && <div className="form-err">{err}</div>}
               <div className="modal-actions">
-                <button className="btn" onClick={save}>save account</button>
+                <button className="btn" onClick={saveChat}>save chat</button>
               </div>
             </>
           )}
-          {tab === "config" && (
+          {tab === "network" && (
             <>
               <div className="formrow">
-                <label className="field-label" htmlFor="st-cmd2">request word</label>
-                <input id="st-cmd2" className="text" value={cmd} onChange={(e) => setCmd(e.target.value)} placeholder="!sr" />
-                <p className="hint">what viewers type in chat to request a song.</p>
+                <span className="field-label">phone remote</span>
+                <div className="modtoggles">
+                  <button className={"mini cfg" + (allowNet ? " accent" : "")} onClick={() => setAllowNet((v) => !v)} aria-pressed={allowNet} title="open the dashboard to phones on the same wi-fi">allow network</button>
+                </div>
+                <p className="hint">anyone on the network gets the full dashboard. off keeps it on this pc only.</p>
               </div>
               <div className="formrow">
-                <label className="field-label" htmlFor="st-maxmin">longest song (minutes)</label>
-                <NumField id="st-maxmin" value={maxMin} onChange={setMaxMin} min={1} max={60} />
-                <p className="hint">requests longer than this get skipped.</p>
+                <label className="field-label" htmlFor="st-port">port</label>
+                <NumField id="st-port" value={port} onChange={setPort} min={1024} max={65535} />
+                <p className="hint">the number in the phone address.</p>
               </div>
-              <div className="formrow">
-                <label className="field-label" htmlFor="st-maxq">queue limit (songs)</label>
-                <NumField id="st-maxq" value={maxQ} onChange={setMaxQ} min={1} max={100} />
-                <p className="hint">how many songs can wait in line.</p>
+              {(app?.lanIps ?? []).length > 0 && (
+                <div className="formrow">
+                  <span className="field-label">open on your phone</span>
+                  {(app?.lanIps ?? []).map((ip) => (
+                    <div key={ip} className="mono" style={{ fontSize: 12 }}>http://{ip}:{port.trim() || app?.port}</div>
+                  ))}
+                </div>
+              )}
+              <p className="hint">port and network changes need a restart to take effect.</p>
+              {err && <div className="form-err">{err}</div>}
+              <div className="modal-actions">
+                <button className="btn" onClick={saveNetwork}>save network</button>
+                <button className="btn ghost" onClick={() => send({ type: "restart" })} title="restarts the whole app">restart app</button>
               </div>
-              <div className="formrow">
-                <label className="field-label" htmlFor="st-rate">wait per viewer (seconds)</label>
-                <NumField id="st-rate" value={rateLimit} onChange={setRateLimit} min={0} max={300} />
-                <p className="hint">how long one viewer waits between their own requests.</p>
+            </>
+          )}
+          {tab === "music" && (
+            <>
+              <div className="group">
+                <span className="group-label">requests</span>
+                <div className="formrow">
+                  <label className="field-label" htmlFor="st-cmd2">request word</label>
+                  <input id="st-cmd2" className="text" value={cmd} onChange={(e) => setCmd(e.target.value)} placeholder="!sr" />
+                  <p className="hint">what viewers type in chat to request a song.</p>
+                </div>
+                <div className="formrow">
+                  <label className="field-label" htmlFor="st-maxquery">longest request text (characters)</label>
+                  <NumField id="st-maxquery" value={maxQuery} onChange={setMaxQuery} min={1} max={200} />
+                  <p className="hint">request text longer than this gets ignored.</p>
+                </div>
               </div>
-              <div className="formrow">
-                <label className="field-label" htmlFor="st-cool">wait between requests (seconds)</label>
-                <NumField id="st-cool" value={cooldown} onChange={setCooldown} min={0} max={300} />
-                <p className="hint">breathing room between any two requests from chat.</p>
+
+              <div className="group">
+                <span className="group-label">pacing</span>
+                <div className="formrow">
+                  <label className="field-label" htmlFor="st-rate">wait per viewer (seconds)</label>
+                  <NumField id="st-rate" value={rateLimit} onChange={setRateLimit} min={0} max={300} />
+                  <p className="hint">how long one viewer waits between their own requests.</p>
+                </div>
+                <div className="formrow">
+                  <label className="field-label" htmlFor="st-cool">wait between requests (seconds)</label>
+                  <NumField id="st-cool" value={cooldown} onChange={setCooldown} min={0} max={300} />
+                  <p className="hint">breathing room between any two requests from chat.</p>
+                </div>
               </div>
-              <div className="formrow">
-                <label className="field-label" htmlFor="st-maxquery">longest request text (characters)</label>
-                <NumField id="st-maxquery" value={maxQuery} onChange={setMaxQuery} min={1} max={200} />
-                <p className="hint">request text longer than this gets ignored.</p>
+
+              <div className="group">
+                <span className="group-label">playback</span>
+                <div className="formrow">
+                  <label className="field-label" htmlFor="st-defvol">startup volume</label>
+                  <NumField id="st-defvol" value={defVol} onChange={setDefVol} min={0} max={100} />
+                  <p className="hint">how loud new songs start.</p>
+                </div>
+                <div className="formrow">
+                  <label className="field-label" htmlFor="st-xfade">crossfade length (seconds)</label>
+                  <input id="st-xfade" className="text" inputMode="decimal" value={xfadeSecs} onChange={(e) => setXfadeSecs(e.target.value)} placeholder="4" />
+                  <p className="hint">overlap between songs, 0.5 to 12.</p>
+                </div>
+              </div>
+
+              <div className="group">
+                <span className="group-label">limits</span>
+                <div className="formrow">
+                  <label className="field-label" htmlFor="st-maxmin">longest song (minutes)</label>
+                  <NumField id="st-maxmin" value={maxMin} onChange={setMaxMin} min={1} max={60} />
+                  <p className="hint">requests longer than this get skipped.</p>
+                </div>
+                <div className="formrow">
+                  <label className="field-label" htmlFor="st-maxq">queue limit (songs)</label>
+                  <NumField id="st-maxq" value={maxQ} onChange={setMaxQ} min={1} max={100} />
+                  <p className="hint">how many songs can wait in line.</p>
+                </div>
+              </div>
+
+              <div className="group">
+                <span className="group-label">mod chat commands</span>
+                <div className="formrow">
+                  <div className="modtoggles">
+                    <button className={"mini cfg" + (modVol ? " accent" : "")} onClick={() => setModVol((v) => !v)} aria-pressed={modVol} title="let mods set volume from chat (!volume 5-25)">!volume</button>
+                    <button className={"mini cfg" + (modReq ? " accent" : "")} onClick={() => setModReq((v) => !v)} aria-pressed={modReq} title="let mods open and close requests (!requests on/off)">!requests</button>
+                    <button className={"mini cfg" + (modTrans ? " accent" : "")} onClick={() => setModTrans((v) => !v)} aria-pressed={modTrans} title="let mods pause and resume (!play / !pause)">play/pause</button>
+                    <button className={"mini cfg" + (modSkip ? " accent" : "")} onClick={() => setModSkip((v) => !v)} aria-pressed={modSkip} title="let mods skip and remove songs (!skip / !revoke / !dq)">skip</button>
+                  </div>
+                  <p className="hint">which chat commands mods can use. off means dashboard-only (you).</p>
+                </div>
               </div>
               {err && <div className="form-err">{err}</div>}
               <div className="modal-actions">

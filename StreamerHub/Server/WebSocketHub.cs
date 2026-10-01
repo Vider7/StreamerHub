@@ -45,9 +45,14 @@ public sealed class WebSocketHub
     }
 
     public Action? ConfigApplied;
+    public Action? RestartRequested;
+    public List<string> LanIps { get; set; } = new();
 
     public Func<MpvPlayer?>? ActivePlayer;
     public Action<bool>? PauseAll;
+    // Set by Program: re-resolves the current song from scratch. Separate
+    // from ActivePlayer because a retry needs to drop the cached URL first.
+    public Action? RetryCurrent;
 
 
 
@@ -72,6 +77,33 @@ public sealed class WebSocketHub
     {
         if (Interlocked.Exchange(ref _musicDirty, 0) == 0) return;
         Broadcast(new { type = "music", music = MusicDto() });
+    }
+
+    // Quit path: browsers hold /ws open, and Kestrel waits on open
+    // connections during shutdown (up to ~30s). Closing them first makes
+    // quit actually quit, so a relaunch right after doesn't hit a stale
+    // single-instance lock with no server behind it.
+    public async Task CloseAllAsync()
+    {
+        // The close handshake waits on the client, and a dead one (a phone
+        // asleep in a drawer) never answers. Cap the whole sweep so Quit can
+        // never hang behind a stale connection.
+        var tasks = new List<Task>();
+        foreach (var ws in _clients.Keys)
+            tasks.Add(CloseOneAsync(ws));
+        await Task.WhenAny(Task.WhenAll(tasks), Task.Delay(2000));
+    }
+
+    static async Task CloseOneAsync(WebSocket ws)
+    {
+        try
+        {
+            if (ws.State != WebSocketState.Open) return;
+            await Task.WhenAny(
+                ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "server stopping", CancellationToken.None),
+                Task.Delay(1500));
+        }
+        catch { }
     }
 
     public async Task Handle(HttpContext ctx)
@@ -193,6 +225,9 @@ public sealed class WebSocketHub
                 case "skip":
                     _music.Skip();
                     break;
+                case "retry":
+                    RetryCurrent?.Invoke();
+                    break;
                 case "stop":
                     _music.Stop();
                     break;
@@ -242,6 +277,15 @@ public sealed class WebSocketHub
                     _music.Move(from, to);
                     break;
                 }
+                case "clearqueue":
+                    _music.ClearQueue();
+                    break;
+                case "playat":
+                {
+                    var i = doc.RootElement.TryGetProperty("index", out var ix) && ix.ValueKind == JsonValueKind.Number ? ix.GetInt32() : -1;
+                    _music.PlayAt(i);
+                    break;
+                }
                 case "volume":
                 {
                     var v = doc.RootElement.GetProperty("value").GetInt32();
@@ -287,7 +331,7 @@ public sealed class WebSocketHub
                     _cfg.Music.Crossfade = doc.RootElement.GetProperty("on").GetBoolean();
                     _cfg.Save();
                     SetAfAll(AfNow());
-                    Broadcast(new { type = "crossfade", on = _cfg.Music.Crossfade });
+                    Broadcast(new { type = "crossfade", on = _cfg.Music.Crossfade, crossfadeSeconds = _cfg.Music.CrossfadeSeconds });
                     break;
                 }
                 case "chat-clear":
@@ -313,6 +357,13 @@ public sealed class WebSocketHub
                     _cfg.Music.RequestsOpen = on;
                     _cfg.Save();
                     Broadcast(new { type = "requests", on });
+                    break;
+                }
+                case "restart":
+                {
+                    Log.Info("restart requested from dashboard");
+                    Broadcast(new { type = "notice", text = "restarting..." });
+                    RestartRequested?.Invoke();
                     break;
                 }
                 case "layout":
@@ -436,6 +487,25 @@ public sealed class WebSocketHub
         _cfg.Music.DefaultVolume = ClampInt(root, "defaultVolume", _cfg.Music.DefaultVolume, 0, 100);
         if (root.TryGetProperty("autoNextRadio", out var radio) && (radio.ValueKind == JsonValueKind.True || radio.ValueKind == JsonValueKind.False))
             _cfg.Music.AutoNextRadio = radio.GetBoolean();
+        if (root.TryGetProperty("modVolume", out var mv) && (mv.ValueKind == JsonValueKind.True || mv.ValueKind == JsonValueKind.False))
+            _cfg.Music.ModVolume = mv.GetBoolean();
+        if (root.TryGetProperty("modRequests", out var mr) && (mr.ValueKind == JsonValueKind.True || mr.ValueKind == JsonValueKind.False))
+            _cfg.Music.ModRequests = mr.GetBoolean();
+        if (root.TryGetProperty("modTransport", out var mt) && (mt.ValueKind == JsonValueKind.True || mt.ValueKind == JsonValueKind.False))
+            _cfg.Music.ModTransport = mt.GetBoolean();
+        if (root.TryGetProperty("modSkip", out var ms) && (ms.ValueKind == JsonValueKind.True || ms.ValueKind == JsonValueKind.False))
+            _cfg.Music.ModSkip = ms.GetBoolean();
+        if (root.TryGetProperty("youtubeApiKey", out var yk) && yk.ValueKind == JsonValueKind.String)
+        {
+            var key = (yk.GetString() ?? "").Trim();
+            if (key.Length > 0) _cfg.Music.YoutubeApiKey = key.Length > 200 ? key.Substring(0, 200) : key;
+        }
+        if (root.TryGetProperty("audioDevice", out var ad) && ad.ValueKind == JsonValueKind.String)
+            _cfg.Music.AudioDevice = ClampText(root, "audioDevice", _cfg.Music.AudioDevice, "", 200);
+        _cfg.Music.CrossfadeSeconds = ClampDouble(root, "crossfadeSeconds", _cfg.Music.CrossfadeSeconds, 0.5, 12);
+        if (root.TryGetProperty("allowNetwork", out var an) && (an.ValueKind == JsonValueKind.True || an.ValueKind == JsonValueKind.False))
+            _cfg.AllowNetwork = an.GetBoolean();
+        _cfg.Port = ClampInt(root, "port", _cfg.Port, 1024, 65535);
         if (root.TryGetProperty("requestsOpen", out var req) && (req.ValueKind == JsonValueKind.True || req.ValueKind == JsonValueKind.False))
             _cfg.Music.RequestsOpen = req.GetBoolean();
         _cfg.Save();
@@ -457,6 +527,13 @@ public sealed class WebSocketHub
     {
         if (root.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Number)
             return Math.Clamp(v.GetInt32(), min, max);
+        return current;
+    }
+
+    static double ClampDouble(JsonElement root, string name, double current, double min, double max)
+    {
+        if (root.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Number)
+            return Math.Clamp(v.GetDouble(), min, max);
         return current;
     }
 
@@ -494,7 +571,7 @@ public sealed class WebSocketHub
     {
         // Global chain carries fade-in only; fade-out is baked per track at load.
         var fade = _cfg.Music.Crossfade
-            ? Math.Clamp(_cfg.Music.CrossfadeSeconds <= 0 ? 4 : _cfg.Music.CrossfadeSeconds, 0.5, 10)
+            ? Math.Clamp(_cfg.Music.CrossfadeSeconds <= 0 ? 4 : _cfg.Music.CrossfadeSeconds, 0.5, 12)
             : 0;
         return MpvPlayer.BuildAf(_cfg.Music.Equalizer, _cfg.Music.Loudness, fade, -1);
     }
@@ -551,6 +628,17 @@ public sealed class WebSocketHub
             globalCooldownSeconds = _cfg.Music.GlobalCooldownSeconds,
             autoNextRadio = _cfg.Music.AutoNextRadio,
             requestsOpen = _cfg.Music.RequestsOpen,
+            modVolume = _cfg.Music.ModVolume,
+            modRequests = _cfg.Music.ModRequests,
+            modTransport = _cfg.Music.ModTransport,
+            modSkip = _cfg.Music.ModSkip,
+            fastPath = YoutubeResolver.FastPathState,
+            fastPathDetail = YoutubeResolver.FastPathDetail,
+            crossfadeSeconds = _cfg.Music.CrossfadeSeconds,
+            audioDevice = _cfg.Music.AudioDevice,
+            port = _cfg.Port,
+            allowNetwork = _cfg.AllowNetwork,
+            lanIps = LanIps,
             loopOne = _cfg.Music.LoopOne,
             defaultVolume = _cfg.Music.DefaultVolume,
             tiktokUser = _cfg.TikTok.Username,
@@ -731,8 +819,9 @@ public sealed class WebSocketHub
                 playing = _music.Playing,
                 radio = _cfg.Music.AutoNextRadio,
                 requests = _cfg.Music.RequestsOpen,
-                crossfade = _cfg.Music.Crossfade,
-                loop = _cfg.Music.LoopOne,
+crossfade = _cfg.Music.Crossfade,
+        crossfadeSeconds = _cfg.Music.CrossfadeSeconds,
+        loop = _cfg.Music.LoopOne,
                 eq = _cfg.Music.Equalizer,
                 loudness = _cfg.Music.Loudness,
             };

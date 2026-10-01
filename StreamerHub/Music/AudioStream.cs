@@ -53,19 +53,61 @@ public static class AudioStream
             return;
         }
 
-        using var req = new HttpRequestMessage(HttpMethod.Get, url);
-        req.Headers.Add("User-Agent", UA);
-        req.Headers.TryAddWithoutValidation("Referer", "https://www.youtube.com/");
         var range = ctx.Request.Headers.Range.ToString();
-        if (!string.IsNullOrEmpty(range)) req.Headers.TryAddWithoutValidation("Range", range);
+        // Player-API URLs 403 a bare GET; they need a Range to serve.
+        if (string.IsNullOrEmpty(range)) range = "bytes=0-";
+        var source = YoutubeResolver.SourceFor(id);
 
-        using var resp = await Http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead);
+        // Try the URL we have. A fast-path URL that resolves but will not
+        // serve is the known failure mode, so re-resolve through yt-dlp once
+        // inside this same request rather than handing mpv another error.
+        var resp = await TryOpenAsync(music, id, url, source, range);
+        if (resp == null) return;
+
+        Log.Info("stream " + id + ": upstream " + (int)resp.StatusCode
+            + " for range='" + range + "' source=" + YoutubeResolver.SourceFor(id)
+            + " contentLength=" + (resp.Content.Headers.ContentLength?.ToString() ?? "null")
+            + " contentRange=" + (resp.Content.Headers.ContentRange?.ToString() ?? "null")
+            + " contentType=" + (resp.Content.Headers.ContentType?.ToString() ?? "null"));
+
         if (!resp.IsSuccessStatusCode)
         {
-            Cache.TryRemove(id, out _);
-            ctx.Response.StatusCode = (int)resp.StatusCode;
-            return;
+            var status = (int)resp.StatusCode;
+            var retryUrl = await RetryViaYtDlpAsync(music, id, url, source, "upstream " + status, range);
+            if (retryUrl == null)
+            {
+                resp.Dispose();
+                Cache.TryRemove(id, out _);
+                ctx.Response.StatusCode = status;
+                return;
+            }
+            resp.Dispose();
+            url = retryUrl;
+            var second = await OpenQuietAsync(url, range, id);
+            if (second == null)
+            {
+                Cache.TryRemove(id, out _);
+                ctx.Response.StatusCode = 502;
+                await ctx.Response.WriteAsJsonAsync(new { error = "could not open upstream for " + id });
+                return;
+            }
+            resp = second;
+            Log.Info("stream " + id + ": upstream retry " + (int)resp.StatusCode
+                + " for range='" + range + "' source=" + YoutubeResolver.SourceFor(id)
+                + " contentLength=" + (resp.Content.Headers.ContentLength?.ToString() ?? "null")
+                + " contentRange=" + (resp.Content.Headers.ContentRange?.ToString() ?? "null"));
+            if (!resp.IsSuccessStatusCode)
+            {
+                var bad = (int)resp.StatusCode;
+                resp.Dispose();
+                Cache.TryRemove(id, out _);
+                ctx.Response.StatusCode = bad;
+                return;
+            }
         }
+
+        using (resp)
+        {
         ctx.Response.StatusCode = 200;
         var ct = resp.Content.Headers.ContentType?.ToString();
         if (!string.IsNullOrEmpty(ct)) ctx.Response.ContentType = ct;
@@ -81,14 +123,136 @@ public static class AudioStream
             using var body = await resp.Content.ReadAsStreamAsync();
             await body.CopyToAsync(ctx.Response.Body);
         }
-        catch
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
+            // Was the bytes dying upstream or here? Log it instead of the bare
+            // rethrow this used to swallow.
             Cache.TryRemove(id, out _);
+            Log.Warn("stream " + id + ": body copy failed after "
+                + (resp.Content.Headers.ContentLength?.ToString() ?? "?") + " declared bytes, source="
+                + YoutubeResolver.SourceFor(id) + " range='" + range + "': "
+                + ex.GetType().Name + ": " + ex.Message);
             throw;
+        }
+        catch (Exception ex)
+        {
+            // Client hung up mid-stream: normal when mpv skips or seeks.
+            Log.Info("stream " + id + ": client aborted mid-stream ("
+                + ex.GetType().Name + ": " + ex.Message + ")");
+            throw;
+        }
         }
     }
 
+    static async Task<HttpResponseMessage> OpenUpstreamAsync(string url, string range, string id)
+    {
+        using var req = new HttpRequestMessage(HttpMethod.Get, url);
+        req.Headers.Add("User-Agent", UA);
+        req.Headers.TryAddWithoutValidation("Referer", "https://www.youtube.com/");
+        req.Headers.TryAddWithoutValidation("Range", range);
+        return await Http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead);
+    }
+
+    // Open, and if the transport itself throws on a fast-path URL, re-resolve
+    // through yt-dlp once before giving up. Returns null after writing the
+    // error response, since there is nothing left to serve.
+    static async Task<HttpResponseMessage?> TryOpenAsync(MusicEngine music, string id, string url, string source, string range)
+    {
+        try
+        {
+            return await OpenUpstreamAsync(url, range, id);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Log.Warn("stream " + id + ": upstream request threw for range='" + range + "' source=" + source
+                + ": " + ex.GetType().Name + ": " + ex.Message);
+            var fresh = await RetryViaYtDlpAsync(music, id, url, source, "threw " + ex.GetType().Name, range);
+            if (fresh == null) return null;
+            return await OpenQuietAsync(fresh, range, id);
+        }
+    }
+
+    static async Task<HttpResponseMessage?> OpenQuietAsync(string url, string range, string id)
+    {
+        try
+        {
+            return await OpenUpstreamAsync(url, range, id);
+        }
+        catch (Exception ex)
+        {
+            Log.Warn("stream " + id + ": retry open threw: " + ex.GetType().Name + ": " + ex.Message);
+            return null;
+        }
+    }
+
+    // Decide whether a dead URL is worth one fresh resolve. Both sources get
+    // this: a yt-dlp URL can 403 too (seen in the log on an expired link),
+    // and a fresh resolve recovered it. Only fast-path failures count toward
+    // the breaker, since that is the one we can turn off.
+    // `why` is either "upstream <code>" or "threw <Type>"; throws are always
+    // worth one retry, codes only when the URL is genuinely dead (403/410).
+    // Returns the fresh URL, or null when there is no better one to try.
+    static async Task<string?> RetryViaYtDlpAsync(MusicEngine music, string id, string url, string source, string why, string range)
+    {
+        var isFast = source.StartsWith("fast", StringComparison.OrdinalIgnoreCase);
+        var threw = why.StartsWith("threw", StringComparison.OrdinalIgnoreCase);
+        // 403/410 mean the URL itself is dead. Anything else (5xx, a weird
+        // status) is more likely upstream being unwell, where hammering a
+        // second resolve costs time and rarely helps.
+        var status = TryParseStatus(why);
+        if (!threw && (!status.HasValue || (status.Value != 403 && status.Value != 410))) return null;
+        Log.Warn("stream " + id + ": " + why + " on " + source + " url, re-resolving (range='" + range + "')");
+        if (isFast) YoutubeResolver.NoteFastPathFailure(id, why);
+        else Log.Info("stream " + id + ": re-resolving dead " + source + " url");
+        Cache.TryRemove(id, out _);
+        var fresh = await ResolveAsync(music, id, viaYtDlp: true);
+        if (fresh == null)
+        {
+            Log.Warn("stream " + id + ": yt-dlp re-resolve returned nothing");
+            return null;
+        }
+        Cache[id] = (fresh, DateTime.UtcNow);
+        // Same URL back: yt-dlp agrees the URL is fine, so the URL is not the
+        // problem. Returning it would just replay the same dead response.
+        if (fresh == url) return null;
+        return fresh;
+    }
+
+    // "upstream 403" -> 403. Null when the reason is not a plain status.
+    static int? TryParseStatus(string why)
+    {
+        var t = why.Trim();
+        if (!t.StartsWith("upstream ", StringComparison.OrdinalIgnoreCase)) return null;
+        t = t.Substring("upstream ".Length).Trim();
+        return int.TryParse(t, out var n) ? n : null;
+    }
+
     public static bool IsCached(string id) => Cache.ContainsKey(id);
+
+    // Drop a cached stream URL so the next resolve goes back out for a fresh
+    // one. A manual retry needs this: the cached URL is the one that just
+    // failed, and replaying it would fail identically.
+    public static void ForgetUrl(string id) => Cache.TryRemove(id, out _);
+
+    // Wait for a growing download to reach `need` bytes (or finish):
+    // true = the bytes are (or will never be) there, false = nothing at all.
+    static async Task<bool> WaitForLengthAsync(string id, string path, long need)
+    {
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+        while (DateTime.UtcNow < deadline)
+        {
+            long len;
+            try { len = new FileInfo(path).Length; }
+            catch { return false; }
+            if (len >= need) return true;
+            // Finished or dead: final answer is whatever is on disk.
+            if (AudioCache.TryGet(id, out _, out _) || !AudioCache.IsPrefetching(id))
+                return len >= need && len > 0;
+            await Task.Delay(250);
+        }
+        try { return new FileInfo(path).Length >= need; }
+        catch { return false; }
+    }
 
     static async Task<bool> WaitForBytesAsync(string path, long minBytes, TimeSpan timeout)
     {
@@ -108,12 +272,40 @@ public static class AudioStream
 
     static async Task ServePartialAsync(HttpContext ctx, string path, string? contentType)
     {
-        // No content-length: chunked. mpv plays this fine; duration resolves
-        // at EOF. Aborts if the download stalls with no progress.
-        ctx.Response.StatusCode = 200;
+        // Growing-file serving with seek support. mpv marks a stream
+        // seekable when it sees Accept-Ranges and jumps with Range
+        // requests, so honor them: a start past the downloaded bytes waits
+        // for the download to catch up (bounded), past the finished EOF is
+        // a 416. No content-length: chunked. Duration resolves at EOF.
+        // Aborts if the download stalls with no progress.
+        var id = Path.GetFileNameWithoutExtension(path);
+        var rangeHeader = ctx.Request.Headers.Range.ToString();
+        long start = 0;
+        var partial = false;
+        if (!string.IsNullOrEmpty(rangeHeader) && rangeHeader.StartsWith("bytes=", StringComparison.OrdinalIgnoreCase))
+        {
+            var spec = rangeHeader.Substring(6).Split('-');
+            if (spec.Length == 2 && long.TryParse(spec[0], out var s) && s > 0) { start = s; partial = true; }
+        }
+        if (!await WaitForLengthAsync(id, path, start + 1))
+        {
+            ctx.Response.StatusCode = 416;
+            return;
+        }
+        ctx.Response.StatusCode = partial ? 206 : 200;
         ctx.Response.ContentType = string.IsNullOrEmpty(contentType) ? "audio/webm" : contentType;
+        ctx.Response.Headers.AcceptRanges = "bytes";
+        if (partial)
+        {
+            long cur;
+            try { cur = new FileInfo(path).Length; }
+            catch { cur = start + 1; }
+            ctx.Response.Headers.ContentRange = "bytes " + start + "-" + Math.Max(start, cur - 1) + "/*";
+        }
         var ct = ctx.RequestAborted;
         using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        try { fs.Seek(start, SeekOrigin.Begin); }
+        catch { ctx.Response.StatusCode = 416; return; }
         var buf = new byte[65536];
         var idleSince = DateTime.UtcNow;
         while (!ct.IsCancellationRequested)
@@ -184,12 +376,16 @@ public static class AudioStream
         catch { }
     }
 
-    static async Task<string?> ResolveAsync(MusicEngine music, string id)
+    // Resolve for playback. `viaYtDlp` both skips the URL cache and refuses
+    // the fast path: the retry path uses it, because the cached URL already
+    // failed once and a fresh fast-path resolve would just repeat the 403.
+    static async Task<string?> ResolveAsync(MusicEngine music, string id, bool viaYtDlp = false)
     {
-        if (Cache.TryGetValue(id, out var e) && DateTime.UtcNow - e.At < TimeSpan.FromMinutes(30)) return e.Url;
-        var url = await music.ResolveAudioUrlAsync(id);
+        if (!viaYtDlp && Cache.TryGetValue(id, out var e) && DateTime.UtcNow - e.At < TimeSpan.FromMinutes(30)) return e.Url;
+        var url = viaYtDlp ? await music.ResolveAudioUrlViaYtDlpAsync(id) : await music.ResolveAudioUrlAsync(id);
         if (url == null) return null;
         Cache[id] = (url, DateTime.UtcNow);
+        if (viaYtDlp) Log.Info("stream " + id + ": re-resolved via yt-dlp, source=" + YoutubeResolver.SourceFor(id));
         foreach (var k in Cache.Keys)
         {
             if (Cache.TryGetValue(k, out var v) && DateTime.UtcNow - v.At > TimeSpan.FromHours(1))

@@ -13,7 +13,7 @@
 
 Everything your stream needs in one browser tab: chat from **Twitch** and **TikTok** side by side, live numbers, and a music box your viewers load songs into. It runs on your PC and quietly lives in the system tray.
 
-> **Local first** — internet is only needed for the chat feeds, YouTube search, and audio. Everything else stays on your PC.
+> **Local first**: internet is only needed for the chat feeds, YouTube search, and audio. Everything else stays on your PC.
 
 <p align="center">
   <img src="docs/dashboard-live.png" alt="StreamerHub dashboard: live chat, music player, and stats" width="100%" />
@@ -36,20 +36,21 @@ Everything your stream needs in one browser tab: chat from **Twitch** and **TikT
 
 ### Live stats
 
-Viewers, likes, gifts (with diamond value), follows, shares, joins. They update as they happen. Joins count first-timers only — rejoins are skipped, and new joiners get a feed line.
+Viewers, likes, gifts (with diamond value), follows, shares, joins. They update as they happen. Joins count first-timers only. Rejoins are skipped, and new joiners get a feed line.
 
 ### Music
 
 | Feature | Description |
 |---|---|
 | **Viewer requests** | Viewers type `!sr song name` in chat, the song lands in the queue and plays. Toggle **Requests** on/off anytime (saved, stays as set after restart) |
-| **Background player** | Music runs in mpv, its own app with its own sound — capture it in OBS as a normal channel |
+| **Background player** | Music runs in mpv, its own app with its own sound. Capture it in OBS as a normal channel |
 | **Keeps playing** | Close the tab or the browser and it keeps going; reopen and it shows exactly where it is |
 | **Crossfade** | True overlap: the next song starts on a second player while the current fades out (toggle Xfade; length in `Music.CrossfadeSeconds`, default 4s) |
 | **Full transport** | Play, pause, previous, skip, volume, scrub bar (drag or arrow keys nudge 5s) |
 | **EQ & loudness** | Slim 10-band equalizer (plus Flat / Bass+ / Vocal / Club presets) and a loudness switch, both saved |
 | **Library lists** | History, liked, and blocked songs live under the player |
-| **Radio fallback** | When the queue runs out, a similar song plays, shuffled from the related mix (same artist won't loop) and preloaded before the current ends. Turn "radio off" to stop instead |
+| **Undo an unlike** | Unliking a song leaves it on the list for a minute with a countdown, so a misclick is recoverable. **undo** puts it back, **x** clears it now, or it goes on its own |
+| **Radio fallback** | When the queue runs out, a similar song plays, shuffled from the related mix (same artist won't loop) and preloaded before the current ends, so a skip is instant instead of waiting on a fetch. Turn "radio off" to stop instead |
 
 ### Layout
 
@@ -75,7 +76,7 @@ Drag the chat, stats, and music panels by their title bars into any order. It re
 
 ### Build it yourself
 
-Needs the .NET SDK and Node.js. Clone the repo and run **`build.bat`** — output is `dist\StreamerHub.exe`. (Developers: `install.bat` installs it to `%LOCALAPPDATA%\StreamerHub` with a Start Menu shortcut instead.)
+Needs the .NET SDK and Node.js. Clone the repo and run **`build.bat`**. The output is `dist\StreamerHub.exe`. (Developers: `install.bat` installs it to `%LOCALAPPDATA%\StreamerHub` with a Start Menu shortcut instead.)
 
 ---
 
@@ -86,7 +87,7 @@ The app checks for updates on its own and shows a chip in the top bar when one i
 | Action | How |
 |---|---|
 | Check now | Click the version chip → check |
-| Install | Click the **update** button — it downloads, verifies, swaps itself in, and restarts. Music resumes where it was |
+| Install | Click the **update** button. It downloads, verifies, swaps itself in, and restarts. Music resumes where it was |
 | After updating | The dashboard tab reloads itself into the new version |
 
 Your settings and lists survive every update. If anything ever goes truly sideways, redownload the zip and drop your old `Config.json` next to the new exe so you keep your channel names.
@@ -99,11 +100,14 @@ Your settings and lists survive every update. If anything ever goes truly sidewa
 
 | Action | How |
 |---|---|
-| Add a song | Search box, type a name, Enter — **play** starts it now, **+ queue** lines it up |
+| Add a song | Search box, type a name, Enter. **play** starts it now, **+ queue** lines it up |
 | Reorder the line | Drag queue rows up or down |
 | Jump around a song | Drag the thin bar under the title, or arrow keys nudge 5 seconds |
 | Controls | Play/pause, previous, skip, replay (restarts the song), loop toggle (replays the song until turned off), volume slider |
+| Space bar | Toggles play/pause from anywhere except a text box, so your hands can stay off the mouse |
+| Skip without the jolt | Skipping and stopping fade the sound out over a moment instead of cutting dead |
 | EQ & loudness | Under the player, saved automatically |
+| Unlike by accident | The song stays in **liked** for a minute, dimmed, counting down. **undo** restores it, **x** removes it now |
 
 ### Chat panel
 
@@ -117,7 +121,7 @@ Viewers request songs with `!sr` plus a song name (links are rejected, names onl
 | Resize activity | Drag the divider above the activity feed up or down |
 | Change theme | Gear icon → themes (amber, rose, mint, violet, blue, rgb, or Custom with your own color) |
 | Colorblind mode | Gear icon → themes → colorblind mode (off, protanopia, deuteranopia, tritanopia). Converts your picked accent to the nearest color the deficiency can tell apart (safe colors stay as picked), on your dashboard and the stream overlay. Off restores your theme |
-| Open it again | Double-click the tray icon (or run the exe again — it opens the dashboard if already running) |
+| Open it again | Double-click the tray icon (or run the exe again, which opens the dashboard if already running) |
 | Stop it | Right-click the tray icon → **Quit** |
 
 ### Themes
@@ -157,6 +161,9 @@ Show the live queue on stream: add a browser source in OBS pointing at `http://1
   "Port": 51324,                    // the number used in the page address
   "AllowNetwork": false,            // true = open the dashboard to the local network (phone section below)
   "AutoOpenBrowser": true,          // true = the page opens once on first run (tray icon reopens it later)
+  "Theme": "amber",                 // amber, rose, mint, violet, blue, rgb, or custom
+  "ThemeColor": "",                 // your own accent, only used when Theme is "custom"
+  "CbMode": "off",                  // off, protanopia, deuteranopia, tritanopia
   "Twitch": {
     "Channel": "your-channel-name", // your Twitch channel name
     "ClientId": "",                 // optional: for Twitch viewer count, see below
@@ -172,7 +179,7 @@ Show the live queue on stream: add a browser source in OBS pointing at `http://1
     "Command": "!sr",               // the word in chat that requests a song
     "YtDlpPath": "",                // leave empty to use the yt-dlp in tools
     "YtDlpCookiesFile": "",         // optional: full path to a cookies.txt if YouTube blocks searches
-    "YoutubeApiKey": "",            // optional: YouTube player API key for faster song resolves (falls back to yt-dlp when empty)
+    "YoutubeApiKey": "",            // optional override; blank = the app picks the key up itself
     "DefaultVolume": 25,            // how loud new songs start
     "MaxTrackMinutes": 10,          // longest song a request can be
     "MaxQueueLength": 20,           // song line limit
@@ -180,12 +187,18 @@ Show the live queue on stream: add a browser source in OBS pointing at `http://1
     "RateLimitSeconds": 15,         // wait between requests per viewer
     "GlobalCooldownSeconds": 5,     // pause between requests from chat
     "AutoNextRadio": true,          // true = a similar song plays when the queue runs out
+    "LoopOne": false,               // true = replay the same song until turned off
+    "RequestsOpen": true,           // true = viewers can request songs with !sr
+    "ModVolume": true,              // mods may set volume from chat (!volume)
+    "ModRequests": true,            // mods may open and close requests (!requests)
+    "ModTransport": true,           // mods may pause and resume (!play / !pause)
+    "ModSkip": true,                // mods may skip and remove songs (!skip / !revoke / !dq)
     "MpvPath": "",                  // leave empty to use the mpv in tools
     "AudioDevice": "",              // empty = your default sound output; set one for a specific device
     "Equalizer": [0,0,0,0,0,0,0,0,0,0], // 10-band EQ, each band -12 to +12
-    "Loudness": false,              // true = smooth out the sound for streaming
+    "Loudness": true,               // true = smooth out the sound for streaming
     "Crossfade": true,              // true = overlap the next song over the ending one
-    "CrossfadeSeconds": 4           // overlap length in seconds (0.5 to 10)
+    "CrossfadeSeconds": 4           // overlap length in seconds (0.5 to 12)
   },
   "Updater": {
     "Enabled": true,                // the built-in update checker
@@ -195,19 +208,37 @@ Show the live queue on stream: add a browser source in OBS pointing at `http://1
 }
 ```
 
+The app also writes your saved state here, so these appear once you use the dashboard:
+
+| Key | What it holds |
+|---|---|
+| `Music.LastPlayed` | The song playing when you closed the app, and how far in it was. This is what makes it resume |
+| `Music.Queue` | Songs waiting in line |
+| `Music.Liked` | Songs you liked |
+| `Music.Blocked` | Songs you blocked, so they never play again |
+| `BrowserOpened` | Set once the page has opened, so first run only opens it one time |
+
+Hand-editing is fine while the app is **closed**. The app rewrites this file as it runs, so edits made while it's open get lost.
+
 ### Twitch viewer count (optional, free)
 
 Chat works with no key at all; without one the dashboard just shows "viewer count off" for that tile, and Twitch avatars load through a public fallback service. Want the number (plus direct Twitch profile pictures)? Register an app at `https://dev.twitch.tv/console/apps`, paste its **Client ID** into `Twitch.ClientId` and **Client Secret** into `Twitch.ClientSecret`, save, reopen.
 
-### Faster song resolves (optional, free)
+### Faster song resolves (optional)
 
-Out of the box every song resolves through yt-dlp, which takes a few seconds. Skip that wait by giving the app YouTube's own public player key:
+Every song resolves through yt-dlp, which takes a couple of seconds. There is a faster route using YouTube's own public player key, and the app picks that key up by itself at startup (the log says `auto key: picked up from youtube page`), so there is normally nothing to do.
 
-1. Open `https://www.youtube.com` in your browser and view the page source (`Ctrl+U`).
-2. Search for `INNERTUBE_API_KEY` and copy the `AIza...` value right after it (same public key for everyone, no account needed).
-3. Close the app first, paste it into `YoutubeApiKey` in `Config.json`, save, reopen. (The app rewrites the file while it runs, so edits made while it's open get lost — including the key.)
+`Music.YoutubeApiKey` is an **optional override** if you want to pin a specific key. Leave it blank to let the app find its own. You never need to copy a key by hand: the value is the public `INNERTUBE_API_KEY` that YouTube serves to every page, not an account secret.
 
-Songs then resolve in about half a second. If the key ever stops working, the app quietly falls back to yt-dlp.
+If a fast resolve ever fails or the URL will not play, the app re-resolves through yt-dlp in the same request rather than dropping the song, and repeated failures switch it off for ten minutes on their own. You can watch this happen in `logs\app.log`:
+
+| Log line | Meaning |
+|---|---|
+| `fast resolve <id> via auto: ok in 140ms` | The fast route answered |
+| `stream <id>: upstream 403 on fast(auto) url, re-resolving via yt-dlp` | Fast URL would not serve, fell back |
+| `fast path disabled for 10 min after 2 failures` | Breaker tripped, yt-dlp only for now |
+
+**About the override:** if you paste a key and it is the wrong length or otherwise not working, the app still tries it and then falls back to its own key automatically, so a bad paste will not break music.
 
 ### Putting the music on your stream
 
@@ -224,14 +255,14 @@ No window to capture: the player has no UI. If Application Audio Capture is miss
 3. On your phone (same Wi-Fi), open `http://<your-pc-ip>:51324` (port changes if you changed `Port`).
 
 Finding your PC's IP, two ways:
-- Easiest: open `logs\app.log` next to `StreamerHub.exe` and look for the `on your network: http://...` lines — that's the exact address to type.
+- Easiest: open `logs\app.log` next to `StreamerHub.exe` and look for the `on your network: http://...` lines. That's the exact address to type.
 - Or press `Win+R`, run `cmd`, type `ipconfig` and read the **IPv4 Address** under your Wi-Fi adapter (usually `192.168.x.x`).
 
 Only on networks you trust: anyone on the network gets the full dashboard, including playback control. Leave `AllowNetwork` at `false` (the default) to keep it on the PC only. Flip it back to `false` and restart to remove the firewall rule again (needs admin once, same as creating it).
 
-**Run it like an app:** open the dashboard on your phone, then iPhone Share → Add to Home Screen (Android: menu → Add to Home screen). It launches standalone — its own icon, no browser tab, no pull-to-refresh.
+**Run it like an app:** open the dashboard on your phone, then iPhone Share → Add to Home Screen (Android: menu → Add to Home screen). It launches standalone with its own icon, no browser tab, no pull-to-refresh.
 
-**Remote behavior:** phones show one panel at a time behind the burger menu (top-left), skip the setup wizard and update chip, and follow the house theme — the PC stays the main screen and every change applies to the one shared state.
+**Remote behavior:** phones show one panel at a time behind the burger menu (top-left), skip the setup wizard and update chip, and follow the house theme. The PC stays the main screen and every change applies to the one shared state.
 
 <p align="center">
   <img src="docs/mobile-dashboard.png" alt="StreamerHub on a phone: music panel with transport, search, and queue" width="300" />
@@ -245,8 +276,8 @@ Only on networks you trust: anyone on the network gets the full dashboard, inclu
 |---|---|
 | Not sure what's happening | Read the status text at the bottom of the page and the lights in the top bar |
 | No music | Make sure `mpv.exe` is in `tools\mpv` next to the app, then play a song |
-| Check says up to date right after a release | Wait a few minutes and check again — the update feed takes a moment to refresh |
-| Need help from a friend | Send them `logs\app.log` from the app folder — usually everything they need |
+| Check says up to date right after a release | Wait a few minutes and check again. The update feed takes a moment to refresh |
+| Need help from a friend | Send them `logs\app.log` from the app folder, usually everything they need |
 
 ---
 

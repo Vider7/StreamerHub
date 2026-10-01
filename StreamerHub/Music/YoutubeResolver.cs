@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace StreamerHub;
 
@@ -18,6 +19,61 @@ public sealed class YoutubeResolver
         _cfg = cfg;
         _ytd = LocateTool(cfg.YtDlpPath, "yt-dlp");
         Log.Info("youtube resolver tool: " + _ytd);
+        _ = WarmAutoKeyAsync();
+    }
+
+    // The player key is one shared public value baked into every YouTube
+    // page load, not a per-user secret. Pick it up ourselves so nobody has
+    // to copy-paste anything; a valid manual key still wins when set.
+    static string? _autoKey;
+    static DateTime _autoKeyAt;
+    static readonly SemaphoreSlim _keyGate = new(1, 1);
+    static readonly HttpClient PageHttp = new() { Timeout = TimeSpan.FromSeconds(10) };
+    const string PageUA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
+
+    static async Task WarmAutoKeyAsync()
+    {
+        try { await AutoKeyAsync(); } catch { }
+    }
+
+    static async Task<string?> AutoKeyAsync()
+    {
+        if (!string.IsNullOrEmpty(_autoKey) && DateTime.UtcNow - _autoKeyAt < TimeSpan.FromHours(24))
+            return _autoKey;
+        await _keyGate.WaitAsync();
+        try
+        {
+            if (!string.IsNullOrEmpty(_autoKey) && DateTime.UtcNow - _autoKeyAt < TimeSpan.FromHours(24))
+                return _autoKey;
+            using var req = new HttpRequestMessage(HttpMethod.Get, "https://www.youtube.com/");
+            req.Headers.Add("User-Agent", PageUA);
+            using var resp = await PageHttp.SendAsync(req);
+            if (!resp.IsSuccessStatusCode)
+            {
+                Log.Warn("auto key: youtube page http " + (int)resp.StatusCode);
+                return null;
+            }
+            var html = await resp.Content.ReadAsStringAsync();
+            var m = Regex.Match(html, "\"INNERTUBE_API_KEY\"\\s*:\\s*\"([A-Za-z0-9_-]{20,})\"");
+            if (!m.Success)
+            {
+                Log.Warn("auto key: not found in youtube page");
+                return null;
+            }
+            _autoKey = m.Groups[1].Value;
+            _autoKeyAt = DateTime.UtcNow;
+            Log.Info("auto key: picked up from youtube page");
+            return _autoKey;
+        }
+        catch (Exception ex)
+        {
+            Log.Warn("auto key fetch failed: " + ex.GetType().Name + " " + ex.Message);
+            return null;
+        }
+        finally
+        {
+            _keyGate.Release();
+        }
     }
 
     void AddAuthArgs(List<string> args)
@@ -151,24 +207,125 @@ public sealed class YoutubeResolver
 
     async Task<string?> ResolveAudioUrlCoreAsync(string id, CancellationToken ct)
     {
-        // Fast path: one direct player-API call (~0.5s) instead of a full
-        // yt-dlp run (seconds). Needs Music.YoutubeApiKey in config;
-        // falls back to yt-dlp when unset or on any failure.
+        // Fast path: one direct player-API call (~0.15s) instead of a full
+        // yt-dlp run (seconds). Needs a player key; the auto key from the
+        // YouTube page is picked up automatically, a config key is an
+        // optional override. Any failure falls through to yt-dlp, and a
+        // bad-URL streak trips a breaker so one failure cannot cost mpv
+        // three attempts in a row.
+        // OFF until a full end-to-end play is proven with the fallback and
+        // breaker in place. Flip this to true for the manual test; leave it
+        // false until the logs show a real track playing through.
+        // A field, not a const: the whole fast path must sit behind this one
+        // check, including the config key, or a configured key sneaks past it.
+        if (!FastResolveEnabled) return await ResolveViaYtDlpAsync(id, ct);
+        if (FastPathTripped())
+        {
+            Log.Info("fast path breaker open, using yt-dlp");
+            return await ResolveViaYtDlpAsync(id, ct);
+        }
         var apiKey = (_cfg.YoutubeApiKey ?? "").Trim();
-        if (apiKey.Length > 0)
+        var candidates = new List<(string Key, string Source)>();
+        // Config key is an override, not a requirement: no length policing,
+        // no warning spam. If it does not work the auto key answers instead.
+        if (apiKey.Length > 0) candidates.Add((apiKey, "config"));
+        var auto = await AutoKeyAsync();
+        if (!string.IsNullOrEmpty(auto) && auto != apiKey) candidates.Add((auto, "auto"));
+        if (candidates.Count == 0)
+        {
+            FastPathState = "off";
+            FastPathDetail = "no key available, resolving through yt-dlp";
+        }
+        else if (FastPathState == "off")
+        {
+            FastPathState = "unproven";
+            FastPathDetail = "key present, no resolve attempted yet";
+        }
+        foreach (var (key, source) in candidates)
         {
             var fsw = Stopwatch.StartNew();
             try
             {
-                var fast = await ResolveViaPlayerApiAsync(id, apiKey);
-                Log.Info("fast resolve " + id + ": " + (string.IsNullOrEmpty(fast) ? "no url" : "ok") + " in " + fsw.ElapsedMilliseconds + "ms");
-                if (!string.IsNullOrEmpty(fast)) return fast;
+                var fast = await ResolveViaPlayerApiAsync(id, key);
+                if (!string.IsNullOrEmpty(fast))
+                {
+                    FastPathState = "ok";
+                    FastPathDetail = "last resolve ok in " + fsw.ElapsedMilliseconds + "ms via " + source;
+                    Log.Info("fast resolve " + id + " via " + source + ": ok in " + fsw.ElapsedMilliseconds + "ms");
+                    LastSource[id] = "fast(" + source + ")";
+                    return fast;
+                }
+                FastPathState = "failing";
+                FastPathDetail = "last resolve got no url via " + source + " in " + fsw.ElapsedMilliseconds + "ms";
+                Log.Info("fast resolve " + id + " via " + source + ": no url in " + fsw.ElapsedMilliseconds + "ms");
             }
             catch (Exception ex)
             {
-                Log.Warn("fast resolve " + id + " threw after " + fsw.ElapsedMilliseconds + "ms: " + ex.GetType().Name + " " + ex.Message);
+                FastPathState = "failing";
+                FastPathDetail = source + " key failed: " + ex.GetType().Name;
+                Log.Warn("fast resolve " + id + " via " + source + " threw after " + fsw.ElapsedMilliseconds + "ms: " + ex.GetType().Name + " " + ex.Message);
             }
         }
+        return await ResolveViaYtDlpAsync(id, ct);
+    }
+
+    // Single switch for the whole fast path. When false every resolve goes
+    // through yt-dlp, including any configured YoutubeApiKey.
+    public static bool FastResolveEnabled = false;
+
+    // --- fast-path breaker -------------------------------------------------
+    // Fast-path URLs that resolved but would not play are worse than slow
+    // ones: mpv retries the same dead URL and each retry is a visible skip.
+    // Two failures inside a minute means the fast path is the problem, so
+    // turn it off for ten minutes and let yt-dlp carry the stream.
+    const int FastFailThreshold = 2;
+    static readonly TimeSpan FastFailWindow = TimeSpan.FromSeconds(60);
+    static readonly TimeSpan FastBreakerOff = TimeSpan.FromMinutes(10);
+    static readonly Queue<DateTime> _fastFails = new();
+    static DateTime _fastBreakerUntil = DateTime.MinValue;
+
+    public static bool FastPathTripped()
+    {
+        lock (_fastFails) return DateTime.UtcNow < _fastBreakerUntil;
+    }
+
+    // Resolve strictly through yt-dlp. The stream handler calls this after a
+    // fast-path URL has already failed, so it must not be able to hand back
+    // another fast URL: that is exactly the retry loop we are avoiding.
+    public Task<string?> ResolveViaYtDlpForcedAsync(string id)
+        => ResolveViaYtDlpAsync(id, CancellationToken.None);
+
+    public static void NoteFastPathFailure(string id, string why)
+    {
+        bool trip;
+        int count;
+        lock (_fastFails)
+        {
+            var now = DateTime.UtcNow;
+            while (_fastFails.Count > 0 && now - _fastFails.Peek() > FastFailWindow) _fastFails.Dequeue();
+            _fastFails.Enqueue(now);
+            count = _fastFails.Count;
+            trip = count >= FastFailThreshold && now >= _fastBreakerUntil;
+            if (trip)
+            {
+                _fastBreakerUntil = now.Add(FastBreakerOff);
+                _fastFails.Clear();
+            }
+        }
+        Log.Warn("fast path playback failure for " + id + " (" + why + "), " + count + " in " + (int)FastFailWindow.TotalSeconds + "s");
+        if (trip)
+            Log.Warn("fast path disabled for " + (int)FastBreakerOff.TotalMinutes + " min after " + count + " failures; yt-dlp only");
+    }
+
+    // Drop the cached fast-path URL for an id so the next attempt re-resolves
+    // through yt-dlp instead of replaying the URL that just failed.
+    public void InvalidateUrl(string id)
+    {
+        LastSource.TryRemove(id, out _);
+    }
+
+    async Task<string?> ResolveViaYtDlpAsync(string id, CancellationToken ct)
+    {
         var sw = Stopwatch.StartNew();
         var args = new List<string> { "--no-playlist", "-f", "bestaudio/best", "-g", "https://www.youtube.com/watch?v=" + id };
         AddAuthArgs(args);
@@ -179,7 +336,9 @@ public sealed class YoutubeResolver
             return null;
         }
         var first = stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.Trim();
-        return string.IsNullOrEmpty(first) ? null : first;
+        if (string.IsNullOrEmpty(first)) return null;
+        LastSource[id] = "yt-dlp";
+        return first;
     }
 
     static readonly HttpClient YtApi = new() { Timeout = TimeSpan.FromSeconds(6) };
@@ -188,7 +347,7 @@ public sealed class YoutubeResolver
     {
         var body = JsonSerializer.Serialize(new
         {
-            context = new { client = new { clientName = "ANDROID", clientVersion = "19.09.37", androidSdkVersion = 30 } },
+            context = new { client = new { clientName = "ANDROID", clientVersion = "20.10.38", androidSdkVersion = 30 } },
             videoId = id,
             racyCheckOk = true,
             contentCheckOk = true,
@@ -233,6 +392,10 @@ public sealed class YoutubeResolver
         }
         if (best == null)
             Log.Warn("player api no playable audio for " + id + " (audio=" + audioTotal + " ciphered=" + audioCiphered + " playability=" + playability + ")");
+        // ratebypass: without it googlevideo throttles these URLs until
+        // playback stalls out (that was the old skip storm).
+        if (best != null && !best.Contains("ratebypass=", StringComparison.OrdinalIgnoreCase))
+            best += (best.Contains('?') ? "&" : "?") + "ratebypass=yes";
         return best;
     }
 
@@ -276,12 +439,29 @@ public sealed class YoutubeResolver
         }
     }
 
+    // Fast-path health for the settings UI: what the last resolve attempt
+    // showed. Updated on every attempt, read by the dashboard at init and
+    // after each settings save.
+    public static string FastPathState { get; private set; } = "off"; // off|unproven|ok|failing
+    public static string FastPathDetail { get; private set; } = "no key configured";
+
+    // Which resolver produced the current URL for an id ("fast" or "ytdlp"),
+    // so the stream handler can say what mpv is actually being fed.
+    static readonly ConcurrentDictionary<string, string> LastSource = new();
+
+    public static string SourceFor(string id) => LastSource.TryGetValue(id, out var s) ? s : "?";
+
     static int _running;
+
+    // A run this slow is the interesting one (throttling, retries, sleeping):
+    // repeat it without --no-warnings so 429/retry chatter reaches the log.
+    const int SlowRunMs = 6000;
 
     async Task<(int Code, string Stdout, string Stderr)> RunAsync(List<string> args, int timeoutSec, CancellationToken ct)
     {
         var n = Interlocked.Increment(ref _running);
         var sw = Stopwatch.StartNew();
+        var command = string.Join(' ', args.Take(5));
         try
         {
             var psi = new ProcessStartInfo
@@ -311,6 +491,25 @@ public sealed class YoutubeResolver
             }
             var stdout = await stdoutTask;
             var stderr = await stderrTask;
+            // Slow runs are where throttling and retries hide. Log whatever
+            // stderr we got; --no-warnings hides the retry chatter, so if it
+            // came back empty re-run once with warnings on to capture it.
+            if (sw.ElapsedMilliseconds > SlowRunMs && ct.IsCancellationRequested == false)
+            {
+                var first = stderr.Trim();
+                if (first.Length == 0)
+                {
+                    var retry = new List<string>();
+                    foreach (var a in args)
+                        if (a != "--no-warnings") retry.Add(a);
+                    if (!retry.Contains("-v")) retry.Insert(0, "-v");
+                    Log.Warn("yt-dlp slow run with empty stderr, repeating verbose: " + command);
+                    var (rc2, _, err2) = await RunAsync(retry, timeoutSec, ct);
+                    first = err2.Trim();
+                    if (first.Length == 0) first = "(verbose rerun produced no stderr, exit " + rc2 + ")";
+                }
+                Log.Warn("yt-dlp slow run " + sw.ElapsedMilliseconds + "ms [" + command + "]: " + first);
+            }
             return (proc.ExitCode, stdout, stderr);
         }
         finally

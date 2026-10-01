@@ -61,6 +61,8 @@ public sealed class MpvPlayer : IDisposable
 
     // pending work for the single IPC worker thread
     volatile string? _pendingUrl;
+    // A load that arrived while a fade-out was running, held until it ends.
+    volatile string? _pendingUrlHeld;
     volatile string? _pendingSeekTo;
     volatile bool _pendingPause;
     volatile bool _pauseRequested;
@@ -80,12 +82,20 @@ public sealed class MpvPlayer : IDisposable
     public event Action? Failed;
     public event Action? Retrying;
     public event Action? PositionChanged;
+    public event Action? Loaded;
+    public event Action? SeekFailed;
 
     public bool Available => _available;
     public string? CurrentId { get; set; }
     public double Position { get; private set; }
     public bool Paused { get; private set; }
     public double Duration { get; private set; }
+    public bool InTrack => _inTrack;
+
+    // Near a crossfade trigger the owner flips this on so time-pos is
+    // sampled about every 50ms instead of every second; off otherwise.
+    volatile bool _fastPoll;
+    public bool FastPoll { get => _fastPoll; set { _fastPoll = value; _wake.Set(); } }
 
     public MpvPlayer(string exe, string device, string ipcName = "streamerhub-mpv")
     {
@@ -112,10 +122,12 @@ public sealed class MpvPlayer : IDisposable
     {
         // Sample-accurate crossfade pair, baked per track: the loader swells
         // in from 0, the ender swells out at its own duration. No volume
-        // commands, no zipper noise, pause/seek safe (position-bound).
+        // commands, no zipper noise, pause/seek safe (position-bound). Both
+        // fades use curve=qsin so the pair sums equal-power: no 3 dB dip at
+        // the midpoint the way linear fades have.
         var inv = CultureInfo.InvariantCulture;
         var chain = fadeSecs > 0
-            ? "afade=t=in:st=0:d=" + fadeSecs.ToString("0.0", inv) + ","
+            ? "afade=t=in:st=0:d=" + fadeSecs.ToString("0.0", inv) + ":curve=qsin,"
             : "";
         // Gentle static leveling: slow attack/release so gain never audibly
         // pumps on sparse material (single-pass loudnorm breathed). Makeup is
@@ -126,7 +138,7 @@ public sealed class MpvPlayer : IDisposable
             : "";
         if (fadeSecs > 0 && fadeOutStartSecs >= 0)
             chain += "afade=t=out:st=" + fadeOutStartSecs.ToString("0.0", inv)
-                + ":d=" + fadeSecs.ToString("0.0", inv) + ",";
+                + ":d=" + fadeSecs.ToString("0.0", inv) + ":curve=qsin,";
         int[] freqs = { 31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000 };
         for (var i = 0; i < freqs.Length; i++)
         {
@@ -305,16 +317,21 @@ public sealed class MpvPlayer : IDisposable
         _wake.Set();
     }
 
-    public void Play(string? streamUrl, string? afForTrack = null) => PlayCore(streamUrl, true, afForTrack);
+    public void Play(string? streamUrl, string? afForTrack = null) => PlayCore(streamUrl, true, true, afForTrack);
 
-    public void RetryPlay(string? streamUrl) => PlayCore(streamUrl, false);
+    public void RetryPlay(string? streamUrl) => PlayCore(streamUrl, false, true);
 
-    void PlayCore(string? streamUrl, bool resetGuard, string? afForTrack = null)
+    // Crossfade preload: load into the idle player paused so the file is
+    // decoded, its real duration is known, and the filter chain is built
+    // before a single sample plays. Unpause with SetPause(false) to start.
+    public void LoadPaused(string? streamUrl, string? afForTrack = null) => PlayCore(streamUrl, true, false, afForTrack);
+
+    void PlayCore(string? streamUrl, bool resetGuard, bool startPlaying, string? afForTrack = null)
     {
         if (!_available) return;
         _lastUrl = string.IsNullOrEmpty(streamUrl) ? null : streamUrl;
         _lastResume = null;
-        _startPlaying = true;
+        _startPlaying = startPlaying;
         if (!string.IsNullOrEmpty(afForTrack)) _pendingTrackAf = afForTrack;
         if (resetGuard)
         {
@@ -355,8 +372,47 @@ public sealed class MpvPlayer : IDisposable
     public void StopAudio()
     {
         if (!_available) return;
+        // A hard stop overrides a fade: drop any held load so a stale URL
+        // cannot reappear on a later track.
+        _pendingUrlHeld = null;
+        ClearFadeOut();
         _pendingStop = true;
         _wake.Set();
+    }
+
+    // Skip and stop used to cut the sound dead. Ramp the volume down over
+    // `secs` first, then stop, so it does not jolt on stream. Restores the
+    // real volume afterwards so the next track is not left silent.
+    public void FadeOutAndStop(double secs = 0.45)
+    {
+        if (!_available) return;
+        if (secs <= 0) { StopAudio(); return; }
+        var target = Math.Max(0, _volume);
+        if (target <= 0) { StopAudio(); return; } // already muted, nothing to ramp
+        _fadeOutUntil = DateTime.UtcNow.AddMilliseconds((int)(secs * 1000));
+        _fadeOutFrom = target;
+        _fadeOutSecs = secs;
+        _wake.Set();
+    }
+
+    DateTime _fadeOutUntil = DateTime.MinValue;
+    double _fadeOutFrom;
+    double _fadeOutSecs;
+
+    // Called from the poll loop while a fade-out is in flight.
+    double? FadeOutStep()
+    {
+        if (DateTime.UtcNow >= _fadeOutUntil) return null;
+        var left = (_fadeOutUntil - DateTime.UtcNow).TotalSeconds;
+        var f = _fadeOutSecs > 0 ? Math.Max(0, Math.Min(1, left / _fadeOutSecs)) : 0;
+        return _fadeOutFrom * f;
+    }
+
+    bool FadeOutDone => DateTime.UtcNow >= _fadeOutUntil;
+
+    void ClearFadeOut()
+    {
+        _fadeOutUntil = DateTime.MinValue;
     }
 
     static readonly TimeSpan FastFailWindow = TimeSpan.FromSeconds(15);
@@ -516,6 +572,9 @@ public sealed class MpvPlayer : IDisposable
             case "playback-error":
                 Failed?.Invoke();
                 break;
+            case "file-loaded":
+                Loaded?.Invoke();
+                break;
         }
     }
 
@@ -591,10 +650,34 @@ public sealed class MpvPlayer : IDisposable
                     _pendingStop = false;
                     EnqueueStop();
                 }
-                if (_pendingUrl is { } url)
+                // Fade-out in flight: ramp the volume down and hold both the
+                // stop and the next load until it finishes, so a skip fades
+                // out before the following song starts instead of cutting.
+                if (_fadeOutUntil > DateTime.MinValue)
+                {
+                    var step = FadeOutStep();
+                    if (step is double fadeVol)
+                    {
+                        try { Command("set_property", "volume", fadeVol); }
+                        catch { }
+                        // Keep waiting: swallow this tick's stop/load.
+                        _pendingStop = false;
+                        if (_pendingUrl != null) { _pendingUrlHeld = _pendingUrl; _pendingUrl = null; }
+                        continue;
+                    }
+                    ClearFadeOut();
+                    try { Command("set_property", "volume", (double)_volume); }
+                    catch { }
+                    if (_pendingUrlHeld != null)
+                    {
+                        _pendingUrl = _pendingUrlHeld;
+                        _pendingUrlHeld = null;
+                    }
+                }
+                if (_pendingUrl is { } urlNow)
                 {
                     _pendingUrl = null;
-                    StartTrack(url);
+                    StartTrack(urlNow);
                 }
                 if (_pendingSeekTo is { } seekStr)
                 {
@@ -710,11 +793,12 @@ public sealed class MpvPlayer : IDisposable
                         catch
                         {
                         }
-                        if (_seekTries >= 20)
+                        if (_seekTries >= 12)
                         {
                             Log.Warn("resume seek to " + rs + " never took; giving up");
                             _pendingResumeSeek = null;
                             _seekTries = 0;
+                            try { SeekFailed?.Invoke(); } catch { }
                         }
                     }
                 }
@@ -728,7 +812,7 @@ public sealed class MpvPlayer : IDisposable
                 Log.Warn("mpv worker error: " + ex.Message);
                 Thread.Sleep(500);
             }
-            _wake.Wait(1000);
+            _wake.Wait(_fastPoll ? 50 : 1000);
             _wake.Reset();
         }
     }
@@ -738,6 +822,14 @@ public sealed class MpvPlayer : IDisposable
         try
         {
             if (string.IsNullOrEmpty(url)) return;
+            // A load cancels any fade-out and puts the real volume back,
+            // otherwise the next track inherits the faded level.
+            if (_fadeOutUntil > DateTime.MinValue)
+            {
+                ClearFadeOut();
+                try { Command("set_property", "volume", (double)_volume); }
+                catch { }
+            }
             if (_pendingTrackAf is { } taf)
             {
                 _pendingTrackAf = null;
