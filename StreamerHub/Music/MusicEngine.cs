@@ -224,9 +224,9 @@ public sealed class MusicEngine
         {
             if (NowPlaying != null && SameTrack(NowPlaying.Result, result, norm))
                 return "it is playing right now";
-            foreach (var q in _queue)
-                if (SameTrack(q.Result, result, norm))
-                    return "it is already in the queue at #" + (_queue.IndexOf(q) + 1);
+            for (var i = 0; i < _queue.Count; i++)
+                if (SameTrack(_queue[i].Result, result, norm))
+                    return "it is already in the queue at #" + (i + 1);
             // Recent history: catch "spam the same song every few minutes".
             foreach (var h in _history.TakeLast(10))
                 if (SameTrack(h.Result, result, norm))
@@ -361,20 +361,29 @@ void BeginOrNext()
             try
             {
                 await Task.Delay(delay);
+                Track? toStart;
                 lock (_queue)
                 {
                     _delayedStartPending = false;
                     if (NowPlaying != null || _queue.Count == 0) return;
-                    if (_queue[0].Result.Id != next.Result.Id) return;
+                    // The delayed track may have been removed or skipped
+                    // while we waited. Starting whatever is at the head is
+                    // correct; bailing out here left the queue stuck with
+                    // nothing playing.
+                    if (_queue[0].Result.Id != next.Result.Id)
+                        Log.Info("delayed track changed, starting the queue head instead");
+                    toStart = _queue[0];
                     _queue.RemoveAt(0);
                 }
                 _lastStartUtc = DateTime.UtcNow;
-                SetNowPlaying(next);
+                SetNowPlaying(toStart);
             }
             catch (Exception ex)
             {
                 lock (_queue) _delayedStartPending = false;
                 Log.Warn("delayed start failed: " + ex.Message);
+                // Never leave the queue stranded because of a failed timer.
+                try { BeginOrNext(); } catch { }
             }
         });
     }

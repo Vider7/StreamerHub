@@ -243,7 +243,16 @@ public sealed class CommandEngine
                     Pending job;
                     lock (_gate)
                     {
-                        if (_pending.Count == 0) return;
+                        // Clearing the flag here, while still holding the
+                        // lock, is what stops a request arriving in the gap
+                        // between an empty queue and shutdown from finding
+                        // the pump already "running" and never being picked
+                        // up. A caller that loses the race re-enters Pump.
+                        if (_pending.Count == 0)
+                        {
+                            _pumping = false;
+                            return;
+                        }
                         job = _pending.Dequeue();
                     }
                     await WorkerGate.WaitAsync();
@@ -252,9 +261,10 @@ public sealed class CommandEngine
                     finally { WorkerGate.Release(); }
                 }
             }
-            finally
+            catch (Exception ex)
             {
                 lock (_gate) _pumping = false;
+                Log.Warn("request pump stopped: " + ex.Message);
             }
         });
     }

@@ -7,10 +7,25 @@ public static class AudioStream
 {
     static readonly HttpClient Http = new() { Timeout = TimeSpan.FromMinutes(2) };
     static readonly ConcurrentDictionary<string, (string Url, DateTime At)> Cache = new();
+
+    // Video ids are YouTube's 11-character token. Anything else is either a
+    // typo or someone poking the endpoint.
+    static bool ValidId(string id)
+        => !string.IsNullOrEmpty(id) && id.Length <= 32
+           && id.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_');
     const string UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
 
     public static async Task Handle(MusicEngine music, HttpContext ctx, string id)
     {
+        // The id arrives straight from the URL and is handed to yt-dlp and
+        // used as a cache key. Reject anything that is not a plain video id
+        // so a crafted path cannot make the server do arbitrary work.
+        if (!ValidId(id))
+        {
+            Log.Warn("stream rejected a malformed id: " + id);
+            ctx.Response.StatusCode = 400;
+            return;
+        }
         var rangeHeader = ctx.Request.Headers.Range.ToString();
         var ready = AudioCache.TryGet(id, out var cachedPath, out var cachedType);
         var growing = AudioCache.TryGetActive(id, out var partialPath, out var partialType);

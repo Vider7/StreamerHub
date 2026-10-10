@@ -777,8 +777,11 @@ public sealed class MpvPlayer : IDisposable
                         _startPlaying = true;
                         _wake.Set();
                     }
-                    if (Position != lastPos || _pipeFailures > 0)
+                    if (_pipeFailures > 0 && Duration > 0 && Math.Abs(Position - lastPos) > 1e-6)
                     {
+                        // Only clear once a query actually succeeded: a stale
+                        // Position from before a failed read would otherwise
+                        // reset the counter and mask a genuinely dead pipe.
                         _pipeFailures = 0;
                         _pipeWarned = false;
                     }
@@ -792,6 +795,10 @@ public sealed class MpvPlayer : IDisposable
                     {
                         _pendingSeekAfterLoad = null;
                         _pendingResumeSeek = ps.ToString("0.###", CultureInfo.InvariantCulture);
+                        // Reset the give-up counter too: a seek that arrived
+                        // before the file loaded has not been retried yet, so
+                        // inheriting an old count would fail it immediately.
+                        _scrubTries = 0;
                     }
                     if (_expectingStop && !Paused && DateTime.UtcNow - _loadedAtUtc > TimeSpan.FromSeconds(10)
                         && Duration <= 0 && Position <= 0)

@@ -153,12 +153,16 @@ public sealed class YoutubeResolver
         try
         {
             var results = await fresh.Task;
-            if (results.Count == 0) _searchCache.TryRemove(key, out _);
+            // Only drop the entry if it is still the one we ran. Removing by
+            // key alone could wipe a good result another caller had just
+            // cached under the same query.
+            if (results.Count == 0)
+                _searchCache.TryRemove(new KeyValuePair<string, (DateTime, Task<List<TrackResult>>)>(key, fresh));
             return results;
         }
         catch
         {
-            _searchCache.TryRemove(key, out _);
+            _searchCache.TryRemove(new KeyValuePair<string, (DateTime, Task<List<TrackResult>>)>(key, fresh));
             throw;
         }
     }
@@ -539,7 +543,7 @@ public sealed class YoutubeResolver
     // repeat it without --no-warnings so 429/retry chatter reaches the log.
     const int SlowRunMs = 6000;
 
-    async Task<(int Code, string Stdout, string Stderr)> RunAsync(List<string> args, int timeoutSec, CancellationToken ct)
+    async Task<(int Code, string Stdout, string Stderr)> RunAsync(List<string> args, int timeoutSec, CancellationToken ct, bool capture = false)
     {
         var n = Interlocked.Increment(ref _running);
         var sw = Stopwatch.StartNew();
@@ -576,17 +580,20 @@ public sealed class YoutubeResolver
             // Slow runs are where throttling and retries hide. Log whatever
             // stderr we got; --no-warnings hides the retry chatter, so if it
             // came back empty re-run once with warnings on to capture it.
-            if (sw.ElapsedMilliseconds > SlowRunMs && ct.IsCancellationRequested == false)
+            if (sw.ElapsedMilliseconds > SlowRunMs && ct.IsCancellationRequested == false && !capture)
             {
                 var first = stderr.Trim();
                 if (first.Length == 0)
                 {
+                    // One verbose repeat, never a chain: the rerun is the same
+                    // throttled request, so recursing would pile more load onto
+                    // exactly the calls that are already struggling.
                     var retry = new List<string>();
                     foreach (var a in args)
                         if (a != "--no-warnings") retry.Add(a);
                     if (!retry.Contains("-v")) retry.Insert(0, "-v");
                     Log.Warn("yt-dlp slow run with empty stderr, repeating verbose: " + command);
-                    var (rc2, _, err2) = await RunAsync(retry, timeoutSec, ct);
+                    var (rc2, _, err2) = await RunAsync(retry, timeoutSec, ct, capture: true);
                     first = err2.Trim();
                     if (first.Length == 0) first = "(verbose rerun produced no stderr, exit " + rc2 + ")";
                 }

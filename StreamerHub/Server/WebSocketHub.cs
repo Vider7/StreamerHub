@@ -89,7 +89,10 @@ public sealed class WebSocketHub
         if (_theme != "custom" && !ThemeIds.Contains(_theme)) _theme = "amber";
         _themeColor = _theme == "custom" ? NormalizeHex(cfg.ThemeColor) : null;
         if (_theme == "custom" && _themeColor == null) _theme = "amber";
-        _cbMode = CbModeIds.Contains(cfg.CbMode ?? "") ? cfg.CbMode.ToLowerInvariant() : "off";
+        // Read CbMode once: it is declared nullable, and the compiler cannot
+        // prove it is non-null on the true branch of the ternary below.
+        var cb = (cfg.CbMode ?? "").Trim().ToLowerInvariant();
+        _cbMode = CbModeIds.Contains(cb) ? cb : "off";
         _musicFlush = new System.Threading.Timer(_ => FlushMusic(), null, 0, 60);
     }
 
