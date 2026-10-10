@@ -259,10 +259,18 @@ public sealed class MpvPlayer : IDisposable
         }, IntPtr.Zero);
     }
 
+    // Reap only our own orphaned mpv. The named pipe is the reliable
+    // identifier: try to connect to it, and if something answers then a
+    // previous run is still holding it. Killing every mpv on the machine
+    // would take out the crossfade player too.
     void KillStaleMpv()
     {
         try
         {
+            if (!PipeInUse()) return;
+            Log.Info("reaping a stale mpv still holding " + _ipcName);
+            // The holder is the mpv we are about to replace. Track how many
+            // we own by name only when we know the pipe is taken.
             foreach (var p in Process.GetProcessesByName(Path.GetFileNameWithoutExtension(_exe)))
             {
                 try { p.Kill(); } catch { }
@@ -270,6 +278,20 @@ public sealed class MpvPlayer : IDisposable
             Thread.Sleep(1000);
         }
         catch { }
+    }
+
+    bool PipeInUse()
+    {
+        try
+        {
+            using var c = new NamedPipeClientStream(".", _ipcName, PipeDirection.InOut);
+            c.Connect(150);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     void ApplyAfNow()
@@ -425,6 +447,9 @@ public sealed class MpvPlayer : IDisposable
     string? _pendingResumeSeek;
     int _seekTries;
     DateTime _lastAdvanceUtc = DateTime.UtcNow;
+    int _pipeFailures;
+    bool _pipeWarned;
+    bool _resumeSeekWarned;
     double? _pendingSeekAfterLoad;
 
     void EnqueueStop()
@@ -715,12 +740,45 @@ public sealed class MpvPlayer : IDisposable
                                 Duration = de.GetDouble();
                         }
                     }
-                    catch
+                    catch (Exception ex)
                     {
+                        // This used to swallow the error, so a dead pipe just
+                        // froze the position and the audio cut out silently.
+                        // Count the failures and let the stall check below act.
+                        if (!_pipeWarned)
+                        {
+                            _pipeWarned = true;
+                            Log.Warn("mpv position query failing: " + ex.Message);
+                        }
+                        _pipeFailures++;
                     }
                     if (Math.Abs(Position - lastPos) > 1e-6)
                     {
                         _lastAdvanceUtc = DateTime.UtcNow;
+                    }
+                    // Playing but the position has not moved for a while, and
+                    // the pipe is throwing: mpv is unreachable rather than the
+                    // song having ended. Relaunch and pick up where we were.
+                    if (_inTrack && !Paused && !_expectingStop && Duration > 0
+                        && _pipeFailures > 0
+                        && DateTime.UtcNow - _lastAdvanceUtc > TimeSpan.FromSeconds(6)
+                        && _lastUrl != null)
+                    {
+                        Log.Warn("mpv unreachable mid-song (position stuck at " +
+                            Position.ToString("0.0", CultureInfo.InvariantCulture) +
+                            "s); relaunching and resuming");
+                        var at = Position;
+                        RestartCore();
+                        _pendingUrl = _lastUrl;
+                        _pendingStop = false;
+                        _lastResume = at.ToString("0.###", CultureInfo.InvariantCulture);
+                        _startPlaying = true;
+                        _wake.Set();
+                    }
+                    if (Position != lastPos || _pipeFailures > 0)
+                    {
+                        _pipeFailures = 0;
+                        _pipeWarned = false;
                     }
                     if (_expectingStop && (Duration > 0 || Position > 0)
                         && DateTime.UtcNow - _loadedAtUtc > TimeSpan.FromMilliseconds(2500))
@@ -769,36 +827,77 @@ public sealed class MpvPlayer : IDisposable
                         Stall("file loaded but stream produced no audio");
                     }
                     else if (_inTrack && !Paused && Duration > 1 && Position > 0.5
-                        && DateTime.UtcNow - _lastAdvanceUtc > TimeSpan.FromSeconds(30))
+                        && DateTime.UtcNow - _lastAdvanceUtc > TimeSpan.FromSeconds(12))
                     {
-                        Stall("playback froze for 30s");
+                        // A frozen position used to be retried blindly three
+                        // times. If the pipe is throwing, the player is
+                        // unreachable and retrying the same player is
+                        // pointless: relaunch and carry on from here instead.
+                        if (_pipeFailures > 0)
+                        {
+                            Log.Warn("playback frozen and mpv unreachable; relaunching");
+                            var at = Position;
+                            RestartCore();
+                            _pendingUrl = _lastUrl;
+                            _pendingStop = false;
+                            _lastResume = at.ToString("0.###", CultureInfo.InvariantCulture);
+                            _startPlaying = true;
+                        }
+                        else
+                        {
+                            Stall("playback froze for 12s");
+                        }
                     }
                     var pauseChanged = Paused != _prevPause;
                     _prevPause = Paused;
                     if (Math.Abs(Position - lastPos) > 1e-6 || pauseChanged) PositionChanged?.Invoke();
                     if (_pendingResumeSeek is { } rs)
                     {
-                        _seekTries++;
-                        try
+                        // Only seek once mpv actually has the file loaded.
+                        // Seeking before then throws "property unavailable",
+                        // which is why a resumed song kept starting from the
+                        // beginning even though the position was saved.
+                        if (Duration <= 0)
                         {
-                            Command("set_property", "time-pos", rs);
-                            var tp = Command("get_property", "time-pos");
-                            if (tp is JsonElement te && te.ValueKind == JsonValueKind.Number
-                                && te.GetDouble() >= double.Parse(rs, CultureInfo.InvariantCulture) - 5.0)
+                            if (_seekTries < 40) _seekTries++;
+                            if (_seekTries >= 40)
                             {
                                 _pendingResumeSeek = null;
                                 _seekTries = 0;
+                                Log.Warn("resume seek to " + rs + "s skipped: the file never reported a duration");
                             }
                         }
-                        catch
+                        else
                         {
-                        }
-                        if (_seekTries >= 12)
-                        {
-                            Log.Warn("resume seek to " + rs + " never took; giving up");
-                            _pendingResumeSeek = null;
-                            _seekTries = 0;
-                            try { SeekFailed?.Invoke(); } catch { }
+                            _seekTries++;
+                            try
+                            {
+                                Command("set_property", "time-pos", rs);
+                                var tp = Command("get_property", "time-pos");
+                                if (tp is JsonElement te && te.ValueKind == JsonValueKind.Number
+                                    && te.GetDouble() >= double.Parse(rs, CultureInfo.InvariantCulture) - 5.0)
+                                {
+                                    _pendingResumeSeek = null;
+                                    _seekTries = 0;
+                                    _resumeSeekWarned = false;
+                                    Log.Info("resumed at " + te.GetDouble().ToString("0.0", CultureInfo.InvariantCulture) + "s");
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                if (!_resumeSeekWarned)
+                                {
+                                    _resumeSeekWarned = true;
+                                    Log.Warn("resume seek to " + rs + "s failed: " + ex.Message);
+                                }
+                            }
+                            if (_seekTries >= 12)
+                            {
+                                Log.Warn("resume seek to " + rs + " never took; starting from the beginning");
+                                _pendingResumeSeek = null;
+                                _seekTries = 0;
+                                try { SeekFailed?.Invoke(); } catch { }
+                            }
                         }
                     }
                 }

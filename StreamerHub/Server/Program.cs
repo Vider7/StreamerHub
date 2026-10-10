@@ -431,7 +431,10 @@ internal static class Program
             _lastPos = active.Position;
             _lastPaused = active.Paused;
             ws.Broadcast(new { type = "music-time", position = _lastPos, playing = !_lastPaused });
-            if ((DateTime.UtcNow - _lastSnapshotUtc).TotalSeconds > 20)
+            // How often the position is written to disk. Was 20s, which meant a crash
+            // or a force-close could lose up to 20 seconds of where the song
+            // was. 5s is cheap enough to not notice.
+            if ((DateTime.UtcNow - _lastSnapshotUtc).TotalSeconds > 5)
             {
                 _lastSnapshotUtc = DateTime.UtcNow;
                 try
