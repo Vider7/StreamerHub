@@ -279,6 +279,26 @@ Only on networks you trust: anyone on the network gets the full dashboard, inclu
 | Check says up to date right after a release | Wait a few minutes and check again. The update feed takes a moment to refresh |
 | Need help from a friend | Send them `logs\app.log` from the app folder, usually everything they need |
 
+## Known issues
+
+Honest list of what is currently wonky. Check here before reporting, and please add to it if you hit something not listed.
+
+| What | What happens | Status |
+|---|---|---|
+| Newest release | Audio can break after hours of playback, then rapidly skip through the queue | Being fixed |
+| Song picks take ~3s to start | First play of a track waits on a slow lookup. Radio transitions are instant | Known, being improved |
+| Age-restricted songs | Some uploads will not play. The app picks a different version automatically and tells you | Handled |
+
+## Reporting a problem
+
+Something wonky that is not listed above? Open an issue with these three things:
+
+1. **What you did** and **what happened instead**
+2. **Your version** — the chip in the top bar shows it
+3. **`logs\app.log`** from the app folder — attach the file
+
+The log is the fastest route to a fix. Most reports are solved from it alone, and it contains song titles and error messages but no chat messages, no viewer names, and no API keys.
+
 ---
 
 ## Building from Source
