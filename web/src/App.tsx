@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef } from "react";
-import { useHub, TrackResultShape, Track, Music, UpdateInfo, AppInfo, AccountInfo } from "./hub";
+import { useHub, TrackResultShape, Track, TrackNote, Music, UpdateInfo, AppInfo, AccountInfo } from "./hub";
 import { fmt, fmtClock } from "./format";
 import { cvdPalette, resolveCvd, seenAs, isHex6 } from "./cvd";
 
@@ -337,7 +337,7 @@ export default function App() {
         )}
         {(!isNarrow || mPanel === "M") && (
           <section className={"panel music" + (over === "M" ? " over" : "")} {...dropProps("M")} style={isNarrow ? undefined : { gridColumnStart: pos("M"), order: pos("M") }}>
-            <PanelMusic music={state.music} pos={state.pos} send={send} appCommand={state.app?.command ?? "!sr"} strip={stripM} results={state.results} searchQ={state.searchQ} />
+            <PanelMusic music={state.music} pos={state.pos} send={send} appCommand={state.app?.command ?? "!sr"} strip={stripM} results={state.results} searchQ={state.searchQ} trackNotes={state.trackNotes} />
           </section>
         )}
       </main>
@@ -1046,7 +1046,7 @@ const PanelStatsM = React.memo(function PanelStats({ stats, twitchViewers, strip
   );
 });
 
-function PanelMusic({ music, pos, send, appCommand, strip, results, searchQ }: { music: Music | null; pos: { position: number; playing: boolean }; send: (m: Record<string, unknown>) => void; appCommand: string; strip: StripDrag; results: TrackResultShape[]; searchQ: string }) {
+function PanelMusic({ music, pos, send, appCommand, strip, results, searchQ, trackNotes }: { music: Music | null; pos: { position: number; playing: boolean }; send: (m: Record<string, unknown>) => void; appCommand: string; strip: StripDrag; results: TrackResultShape[]; searchQ: string; trackNotes: Record<string, TrackNote> }) {
   const [eqOpen, setEqOpen] = React.useState(false);
   const [historyOpen, setHistoryOpen] = React.useState(false);
   const [likedOpen, setLikedOpen] = React.useState(false);
@@ -1101,7 +1101,7 @@ function PanelMusic({ music, pos, send, appCommand, strip, results, searchQ }: {
       {blockedOpen && <BlockedListM blocked={music?.blocked ?? []} send={send} onClose={() => setBlockedOpen(false)} />}
       {eqOpen && <EqRowM music={music} send={send} onClose={() => setEqOpen(false)} />}
       <div className="section-label">find a track</div>
-      <SearchBoxM send={send} results={results} searchQ={searchQ} />
+      <SearchBoxM send={send} results={results} searchQ={searchQ} notes={trackNotes} />
       <div className="section-label">up next</div>
       <QueueListM music={music} send={send} />
     </div>
@@ -1602,15 +1602,25 @@ const BlockedListM = React.memo(function BlockedList({ blocked, send, onClose }:
   );
 });
 
-const SearchBoxM = React.memo(function SearchBox({ send, results, searchQ }: { send: (m: Record<string, unknown>) => void; results: TrackResultShape[]; searchQ: string }) {
+const SearchBoxM = React.memo(function SearchBox({ send, results, searchQ, notes }: { send: (m: Record<string, unknown>) => void; results: TrackResultShape[]; searchQ: string; notes: Record<string, TrackNote> }) {
   const [q, setQ] = React.useState("");
   const t = React.useRef<number | undefined>(undefined);
   const lastSent = React.useRef("");
   const settledFor = React.useRef("");
+  const [noteTick, setNoteTick] = React.useState(0);
 
   useEffect(() => {
     settledFor.current = q;
   }, [results]);
+
+  // Notes fade on their own so a row does not keep a stale warning on it.
+  const noteKeys = Object.keys(notes ?? {});
+  useEffect(() => {
+    if (noteKeys.length === 0) return;
+    const iv = window.setInterval(() => setNoteTick((n) => n + 1), 1000);
+    return () => window.clearInterval(iv);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [noteKeys.join(",")]);
 
   const runSearch = (text: string) => {
     send({ type: "search", q: text });
@@ -1677,16 +1687,27 @@ const SearchBoxM = React.memo(function SearchBox({ send, results, searchQ }: { s
       {noResults && <div className="empty">no results for that</div>}
       {shown.length > 0 && q.trim().length > 0 && (
         <div className="resultlist">
-          {shown.map((r) => (
-            <div className="rrow" key={r.id}>
-              <TrackThumb id={r.id} className="rart" alt="" />
-              <span className="rtitle" title={r.title}>{r.title}</span>
-              <span className="rchan">{r.channel}</span>
-              <span className="rdur mono">{r.durationLabel}</span>
-              <button className="mini" onClick={() => pick(r, "play")} aria-label="play now">{"play"}</button>
-              <button className="mini accent" onClick={() => pick(r, "queue")} aria-label="add to queue">{"+ queue"}</button>
-            </div>
-          ))}
+          {shown.map((r) => {
+            // Only show a note while it is fresh, so it reads as feedback
+            // about what you just did rather than permanent row state.
+            const note = (notes ?? {})[r.id];
+            const fresh = note && Date.now() - note.at < 8000;
+            void noteTick;
+            return (
+              <div className={"rrow" + (fresh ? " noted" : "")} key={r.id}>
+                <TrackThumb id={r.id} className="rart" alt="" />
+                <span className="rtitle" title={r.title}>{r.title}</span>
+                {fresh ? (
+                  <span className={"rnote" + (note.ok ? "" : " bad")} title={note.text}>{note.text}</span>
+                ) : (
+                  <span className="rchan">{r.channel}</span>
+                )}
+                <span className="rdur mono">{r.durationLabel}</span>
+                <button className="mini" onClick={() => pick(r, "play")} aria-label="play now">{"play"}</button>
+                <button className="mini accent" onClick={() => pick(r, "queue")} aria-label="add to queue">{"+ queue"}</button>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

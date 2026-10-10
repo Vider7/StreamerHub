@@ -10,6 +10,10 @@ export type TrackResultShape = {
 
 export type Track = TrackResultShape & { by: string; platform?: string };
 
+// Per-track feedback for a play/queue click: e.g. the requested upload was
+// age restricted and a different version was substituted.
+export type TrackNote = { text: string; ok: boolean; at: number };
+
 export type ChatEntry = {
   time: string;
   role: "chat" | "bot";
@@ -139,6 +143,7 @@ export type HubState = {
   applying: boolean;
   results: TrackResultShape[];
   searchQ: string;
+  trackNotes: Record<string, TrackNote>;
   layout: string;
   update: UpdateInfo;
   logs: string[];
@@ -164,6 +169,7 @@ const emptyState: HubState = {
   applying: false,
   results: [],
   searchQ: "",
+  trackNotes: {},
   layout: "CSM",
   update: { current: "", status: "idle", latest: "", ready: false },
   logs: [],
@@ -261,10 +267,11 @@ export function useHub() {
             pos: ((i.music as Music)?.position != null
               ? { position: (i.music as Music)?.position ?? 0, playing: (i.music as Music)?.playing ?? false }
               : { position: 0, playing: false }),
-            notice: (i as Record<string, string>).notice ?? "",
-            results: [],
-            searchQ: "",
-            layout: ((i.app as AppInfo)?.layout ?? "CSM") as string,
+  notice: (i as Record<string, string>).notice ?? "",
+  results: [],
+  searchQ: "",
+  trackNotes: {},
+  layout: ((i.app as AppInfo)?.layout ?? "CSM") as string,
             update: (i.update as UpdateInfo) ?? { current: "", status: "idle", latest: "", ready: false },
             setup: (i.setup as SetupInfo) ?? null,
             account: (i.account as AccountInfo) ?? null,
@@ -413,6 +420,28 @@ export function useHub() {
               : s.music,
           }));
           break;
+        case "tracknote": {
+          // Per-track outcome for a play/queue click, so the search row can
+          // show why it swapped versions instead of a generic toast.
+          const id = msg.id as string;
+          if (!id) break;
+          const text = (msg.text as string) ?? "";
+          const entry: TrackNote = {
+            text: text || (msg.ok ? "playing" : "could not play"),
+            ok: msg.ok !== false,
+            at: Date.now(),
+          };
+          setState((s) => {
+            const next = { ...s.trackNotes };
+            // Keep it small; only recent notes matter.
+            for (const k of Object.keys(next)) {
+              if (Date.now() - next[k].at > 8000) delete next[k];
+            }
+            next[id] = entry;
+            return { ...s, trackNotes: next };
+          });
+          break;
+        }
         case "update":
           setState((s) => ({ ...s, update: msg as unknown as UpdateInfo }));
           break;

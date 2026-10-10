@@ -14,6 +14,15 @@ public sealed class YoutubeResolver
     const int SearchCacheTtlSeconds = 300;
     const int SearchCacheMax = 96;
 
+    // Outcome of picking a playable result: the winner (if any), the ones
+    // that would not resolve, and how many candidates were tried.
+    public sealed class PickResult
+    {
+        public TrackResult? Track;
+        public List<string> Skipped = new();
+        public int Tried;
+    }
+
     public YoutubeResolver(MusicConfig cfg)
     {
         _cfg = cfg;
@@ -154,7 +163,35 @@ public sealed class YoutubeResolver
         }
     }
 
-    async Task<List<TrackResult>> RunSearchAsync(string query, CancellationToken ct)
+    // Pick a search result that will actually play. YouTube's top hit is
+    // often an age-gated upload that refuses to resolve ("Sign in to confirm
+    // your age"), and queueing it wastes the viewer's whole wait on a track
+    // that gets skipped the moment it starts. So resolve candidates until one
+    // works and return the first that does.
+    //
+    // The resolve is not wasted work: playback resolves the same id later and
+    // shares this run through the inflight cache, so verifying here just
+    // moves the cost earlier and buys certainty.
+    public async Task<PickResult> PickPlayableAsync(List<TrackResult> results, int maxTries, CancellationToken ct = default)
+    {
+        var tried = 0;
+        var skipped = new List<string>();
+        foreach (var r in results)
+        {
+            if (tried >= maxTries) break;
+            if (r.Duration <= 0) continue;
+            tried++;
+            string? url = null;
+            try { url = await ResolveAudioUrlAsync(r.Id, ct); }
+            catch (Exception ex) { Log.Info("pick: resolve threw for " + r.Id + ": " + ex.GetType().Name); }
+            if (!string.IsNullOrEmpty(url)) return new PickResult { Track = r, Skipped = skipped, Tried = tried };
+            Log.Info("pick: " + r.Id + " would not resolve (" + r.Title + "), trying the next result");
+            skipped.Add(r.Title);
+        }
+        return new PickResult { Track = null, Skipped = skipped, Tried = tried };
+    }
+
+    public async Task<List<TrackResult>> RunSearchAsync(string query, CancellationToken ct)
     {
         var sw = Stopwatch.StartNew();
         var args = new List<string> { "--no-warnings", "--flat-playlist", "-J", "ytsearch15:" + query };
@@ -284,6 +321,47 @@ public sealed class YoutubeResolver
     static readonly Queue<DateTime> _fastFails = new();
     static DateTime _fastBreakerUntil = DateTime.MinValue;
 
+    // Videos that cannot be resolved at all (age gate, private, removed).
+    // Retrying these only produces silence, so the stream handler gives up on
+    // the first attempt instead of mpv's usual three.
+    static readonly ConcurrentDictionary<string, DateTime> _unplayable = new();
+    static readonly TimeSpan UnplayableTtl = TimeSpan.FromHours(1);
+
+    public static bool IsUnplayable(string id)
+    {
+        if (!_unplayable.TryGetValue(id, out var at)) return false;
+        if (DateTime.UtcNow - at > UnplayableTtl) { _unplayable.TryRemove(id, out _); return false; }
+        return true;
+    }
+
+    // yt-dlp puts the useful part in ERROR:, behind whatever warnings came
+    // first. Log that line, not the whole blob, so the real reason is visible.
+    static string ReasonFromStderr(string stderr)
+    {
+        var lines = (stderr ?? "").Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        foreach (var raw in lines)
+        {
+            var line = raw.Trim();
+            if (line.StartsWith("ERROR:", StringComparison.OrdinalIgnoreCase))
+                return line.Length > 220 ? line.Substring(0, 220) : line;
+        }
+        var all = string.Join(" | ", lines.Select(l => l.Trim()).Where(l => l.Length > 0));
+        return all.Length > 220 ? all.Substring(0, 220) : all;
+    }
+
+    static bool IsPermanentFailure(string stderr)
+    {
+        var s = (stderr ?? "").ToLowerInvariant();
+        return s.Contains("confirm your age")
+            || s.Contains("sign in to confirm")
+            || s.Contains("private video")
+            || s.Contains("video unavailable")
+            || s.Contains("removed by the uploader")
+            || s.Contains("this video has been removed")
+            || s.Contains("members-only")
+            || s.Contains("is not available in your country");
+    }
+
     public static bool FastPathTripped()
     {
         lock (_fastFails) return DateTime.UtcNow < _fastBreakerUntil;
@@ -332,7 +410,11 @@ public sealed class YoutubeResolver
         var (code, stdout, stderr) = await RunAsync(args, 120, ct);
         if (code != 0)
         {
-            Log.Warn("resolve failed for " + id + " in " + sw.ElapsedMilliseconds + "ms: " + stderr.Trim());
+            Log.Warn("resolve failed for " + id + " in " + sw.ElapsedMilliseconds + "ms: " + ReasonFromStderr(stderr));
+            // Age gates, private videos and removed uploads will never resolve,
+            // however many times we ask. Remember that so the stream layer
+            // gives up at once instead of retrying into a minute of silence.
+            if (IsPermanentFailure(stderr)) _unplayable.TryAdd(id, DateTime.UtcNow);
             return null;
         }
         var first = stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.Trim();

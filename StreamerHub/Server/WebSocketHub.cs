@@ -46,6 +46,26 @@ public sealed class WebSocketHub
 
     public Action? ConfigApplied;
     public Action? RestartRequested;
+
+    // Confirm a dashboard-chosen track can actually play, swapping in another
+    // version when it cannot. Returns null and explains itself on failure so
+    // the caller just stops.
+    async Task<TrackResult?> VerifyThen(MusicEngine music, TrackResult wanted, string verb)
+    {
+        var (track, note) = await music.VerifyPlayableAsync(wanted);
+        if (track == null)
+        {
+            Log.Info(verb + " refused for " + wanted.Id + ": " + note);
+            Broadcast(new { type = "tracknote", id = wanted.Id, ok = false, text = note });
+            Broadcast(new { type = "notice", text = wanted.Title + " - " + note });
+            return null;
+        }
+        // Targeted at the row that was clicked, so the list can say what
+        // happened on that button instead of a generic toast somewhere else.
+        Broadcast(new { type = "tracknote", id = wanted.Id, ok = true, text = note });
+        if (note.Length > 0) Broadcast(new { type = "notice", text = wanted.Title + " - " + note });
+        return track;
+    }
     public List<string> LanIps { get; set; } = new();
 
     public Func<MpvPlayer?>? ActivePlayer;
@@ -214,11 +234,20 @@ public sealed class WebSocketHub
                     break;
                 }
                 case "play":
-                    _music.PlayNow(ToResult(doc.RootElement, 0));
+                {
+                    // Verify before switching: a search result can be an
+                    // age-gated upload that will never play.
+                    var wanted = ToResult(doc.RootElement, 0);
+                    var settled = await VerifyThen(_music, wanted, "playing");
+                    if (settled != null) _music.PlayNow(settled);
                     break;
+                }
                 case "queue":
                 {
-                    var order = _music.Request(ToResult(doc.RootElement, 0), "you", null);
+                    var wanted = ToResult(doc.RootElement, 0);
+                    var settled = await VerifyThen(_music, wanted, "queued");
+                    if (settled == null) break;
+                    var order = _music.Request(settled, "you", null);
                     Broadcast(new { type = "notice", text = order });
                     break;
                 }

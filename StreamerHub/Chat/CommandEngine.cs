@@ -17,7 +17,6 @@ public sealed class CommandEngine
     readonly object _gate = new();
     readonly Dictionary<string, DateTime> _lastRequest = new();
     readonly HashSet<string> _inflight = new();
-    DateTime _lastGlobal = DateTime.MinValue;
 
     public CommandEngine(MusicConfig cfg, MusicEngine player, ChatHub hub, YoutubeResolver resolver)
     {
@@ -191,49 +190,115 @@ public sealed class CommandEngine
                 Reply(platform, "already searching a request for you");
                 return;
             }
-            if ((now - _lastGlobal).TotalSeconds < _cfg.GlobalCooldownSeconds)
+            // No global cooldown here on purpose. Two people asking at the
+            // same time used to mean the second was silently refused, which
+            // is the opposite of fair. Requests queue instead and are worked
+            // through a small pool, so the wait happens after they have been
+            // heard rather than by throwing their request away.
+            // (GlobalCooldownSeconds no longer gates anything; it is still in
+            // the config and the settings UI. See the note in README.)
+            if (_pending.Count >= MaxPending)
             {
-                Log.Info($"!sr global cooldown: {username} [{platform}]");
-                Reply(platform, "slow down, try again in a moment");
+                Log.Info($"!sr queue full: {username} [{platform}]");
+                Reply(platform, "too many requests coming in, try again in a moment");
                 return;
             }
             _lastRequest[username] = now;
-            _lastGlobal = now;
             _inflight.Add(username);
+            if (query.Length > _cfg.MaxQueryLength) query = query.Substring(0, _cfg.MaxQueryLength);
+            _pending.Enqueue(new Pending(username, query, platform));
+            Log.Info($"!sr queued to search: {username} [{platform}] query=\"{query}\" depth={_pending.Count}");
         }
+        Pump();
+    }
 
-        if (query.Length > _cfg.MaxQueryLength)
+    // Small fixed pool of searchers. Bounded so a burst of requests cannot
+    // spawn a yt-dlp process each, but wide enough that two people asking
+    // together both get served rather than one winning a coin flip.
+    const int MaxWorkers = 3;
+    const int MaxPending = 12;
+    // How many search results to resolve before giving up on a request. Three
+    // covers the common case (age-gated top hit, playable second) without
+    // spending many resolves on a nonsense query.
+    const int MaxCandidatesToTry = 3;
+    static readonly SemaphoreSlim WorkerGate = new(MaxWorkers, MaxWorkers);
+    readonly Queue<Pending> _pending = new();
+
+    sealed record Pending(string Username, string Query, ChatPlatform Platform);
+
+    static bool _pumping;
+
+    void Pump()
+    {
+        lock (_gate)
         {
-            query = query.Substring(0, _cfg.MaxQueryLength);
+            if (_pumping) return;
+            _pumping = true;
         }
-
-        Log.Info($"!sr accepted: {username} [{platform}] query=\"{query}\"");
         _ = Task.Run(async () =>
         {
             try
             {
-                var results = await _resolver.SearchAsync(query);
-                var pick = results.FirstOrDefault(r => r.Duration > 0);
-                if (pick == null)
+                while (true)
                 {
-                    Log.Warn($"!sr no playable result for: \"{query}\" from {username}");
-                    Reply(platform, "no playable result for that, try a clearer title");
-                    return;
+                    Pending job;
+                    lock (_gate)
+                    {
+                        if (_pending.Count == 0) return;
+                        job = _pending.Dequeue();
+                    }
+                    await WorkerGate.WaitAsync();
+                    try { await RunRequestAsync(job); }
+                    catch (Exception ex) { Log.Warn("request failed: " + ex.Message); }
+                    finally { WorkerGate.Release(); }
                 }
-                var notice = _player.Request(pick, username, platform);
-                Log.Info($"!sr queued for {username}: {pick.Title}");
-                Reply(platform, notice);
-            }
-            catch (Exception ex)
-            {
-                Log.Warn("request failed: " + ex.Message);
-                Reply(platform, "something went wrong while searching");
             }
             finally
             {
-                lock (_gate) _inflight.Remove(username);
+                lock (_gate) _pumping = false;
             }
         });
+    }
+
+    async Task RunRequestAsync(Pending job)
+    {
+        var username = job.Username;
+        var platform = job.Platform;
+        try
+        {
+            var query = job.Query;
+            var results = await _resolver.SearchAsync(query);
+            // Verify before queueing. A top result that will not resolve (an
+            // age-gated upload, typically) would otherwise sit in the queue
+            // and get skipped the moment it started, wasting the viewer's
+            // whole wait.
+            var pick = await _resolver.PickPlayableAsync(results, MaxCandidatesToTry);
+            if (pick.Track == null)
+            {
+                Log.Warn($"!sr no playable result for: \"{query}\" from {username} (tried {pick.Tried})");
+                Reply(platform, pick.Skipped.Count > 0
+                    ? "couldn't find a playable version of that one, sorry"
+                    : "no playable result for that, try a clearer title");
+                return;
+            }
+            var notice = _player.Request(pick.Track, username, platform);
+            Log.Info($"!sr queued for {username}: {pick.Track.Title}" +
+                (pick.Skipped.Count > 0 ? $" (skipped {pick.Skipped.Count} unavailable)" : ""));
+            // Say when the version played is not the top search hit, so the
+            // difference is not a surprise.
+            if (pick.Skipped.Count > 0 && !notice.StartsWith("already got it"))
+                notice += " (picked another version, the first one will not play)";
+            Reply(platform, notice);
+        }
+        catch (Exception ex)
+        {
+            Log.Warn("request failed: " + ex.Message);
+            Reply(platform, "something went wrong while searching");
+        }
+        finally
+        {
+            lock (_gate) _inflight.Remove(username);
+        }
     }
 
     void Reply(ChatPlatform platform, string text)

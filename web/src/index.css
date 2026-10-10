@@ -1526,6 +1526,37 @@ input[type="range"].slider::-moz-range-thumb {
   white-space: nowrap;
 }
 
+/* Per-row feedback after a play/queue click: the requested upload was age
+   restricted so a different version was substituted. Sits where the channel
+   name normally is, so the row does not reflow. */
+.rnote {
+  flex: none;
+  max-width: 150px;
+  font-size: 11px;
+  color: var(--accent);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  animation: note-in 140ms ease-out;
+}
+
+.rnote.bad {
+  color: #ff6b6b;
+}
+
+.rrow.noted {
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+}
+
+@keyframes note-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rnote { animation: none; }
+}
+
 .qdur,
 .rdur {
   flex: none;

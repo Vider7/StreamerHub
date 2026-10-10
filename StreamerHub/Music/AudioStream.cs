@@ -48,6 +48,16 @@ public static class AudioStream
         var url = await ResolveAsync(music, id);
         if (url == null)
         {
+            // Age-gated / private / removed. Answer immediately so mpv stops
+            // retrying: handing it a stream that can never work just means a
+            // minute of silence with the song on screen before it gives up.
+            if (YoutubeResolver.IsUnplayable(id))
+            {
+                Log.Info("stream " + id + ": known unplayable, failing fast instead of retrying");
+                ctx.Response.StatusCode = 451;
+                await ctx.Response.WriteAsJsonAsync(new { error = "not available: " + id });
+                return;
+            }
             ctx.Response.StatusCode = 502;
             await ctx.Response.WriteAsJsonAsync(new { error = "could not resolve stream for " + id });
             return;

@@ -210,6 +210,65 @@ public sealed class MusicEngine
         !string.IsNullOrEmpty(id) && id.Length <= 128
         && id.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_');
 
+    // Has this song already been asked for? Checks the queue, what is playing
+    // and recent history, so a viewer cannot stack the same track five times.
+    // Matches on id first, then on the normalized title, so a different upload
+    // of the same song ("Remix", "Acoustic", "(Official Video)") still counts
+    // as a duplicate rather than a fresh request.
+    public string? DuplicateOf(TrackResult result)
+    {
+        var norm = NormalizeTitle(result.Title);
+        lock (_queue)
+        {
+            if (NowPlaying != null && SameTrack(NowPlaying.Result, result, norm))
+                return "it is playing right now";
+            foreach (var q in _queue)
+                if (SameTrack(q.Result, result, norm))
+                    return "it is already in the queue at #" + (_queue.IndexOf(q) + 1);
+            // Recent history: catch "spam the same song every few minutes".
+            foreach (var h in _history.TakeLast(10))
+                if (SameTrack(h.Result, result, norm))
+                    return "it just played";
+        }
+        return null;
+    }
+
+    static bool SameTrack(TrackResult have, TrackResult want, string wantNorm)
+    {
+        if (have.Id == want.Id) return true;
+        if (wantNorm.Length == 0) return false;
+        return NormalizeTitle(have.Title) == wantNorm;
+    }
+
+    // Resolve-checked entry points for dashboard play/queue. A search result
+    // can be an age-gated upload that will never play, and queueing it leaves
+    // the song on screen in silence. So: confirm it resolves, and if not, look
+    // up the title and swap in a version that does.
+    // Returns the track actually used, or null when nothing playable was found.
+    public async Task<(TrackResult? Track, string Note)> VerifyPlayableAsync(TrackResult result)
+    {
+        if (!ValidId(result.Id) || IsBlocked(result.Id)) return (null, "that one is blocked");
+        string? url = null;
+        try { url = await _resolver.ResolveAudioUrlAsync(result.Id); }
+        catch { }
+        if (!string.IsNullOrEmpty(url)) return (result, "");
+        if (IsBlocked(result.Id)) return (null, "that one is blocked");
+        if (result.Duration > _cfg.MaxTrackMinutes * 60.0) return (null, "over the length limit");
+        var where = result.Channel;
+        if (string.IsNullOrWhiteSpace(where)) where = result.Title;
+        List<TrackResult> hits;
+        try { hits = await _resolver.SearchAsync(result.Title + " " + where); }
+        catch { hits = new List<TrackResult>(); }
+        // Skip the dead one we came from, and anything blocked or over-length.
+        var pool = hits.Where(h => h.Id != result.Id && !IsBlocked(h.Id)
+            && h.Duration > 0 && h.Duration <= _cfg.MaxTrackMinutes * 60.0).ToList();
+        if (pool.Count == 0) return (null, "couldn't find a playable version");
+        var pick = await _resolver.PickPlayableAsync(pool, 3);
+        if (pick.Track == null) return (null, "couldn't find a playable version");
+        Log.Info("swapped unplayable " + result.Id + " for " + pick.Track.Id + ": " + pick.Track.Title);
+        return (pick.Track, "using another version, the first one will not play");
+    }
+
     public string Request(TrackResult result, string by, ChatPlatform? platform)
     {
         if (!ValidId(result.Id))
@@ -227,6 +286,11 @@ public sealed class MusicEngine
         if (result.Duration > _cfg.MaxTrackMinutes * 60.0)
         {
             return "track is longer than " + _cfg.MaxTrackMinutes + " minutes";
+        }
+        var dupe = DuplicateOf(result);
+        if (dupe != null)
+        {
+            return "already got it - " + dupe;
         }
         lock (_queue)
         {
