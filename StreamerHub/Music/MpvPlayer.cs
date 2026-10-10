@@ -863,10 +863,31 @@ public sealed class MpvPlayer : IDisposable
         catch (Exception ex)
         {
             Log.Warn("loadfile failed: " + ex.Message);
+            // A broken pipe leaves mpv running but unreachable, so the
+            // dead-process check never fires and every later load fails the
+            // same way. Relaunch and retry the same track instead of handing
+            // the failure straight up as a skip.
+            if (IsPipeFailure(ex))
+            {
+                Log.Warn("mpv pipe is broken; relaunching and retrying this track");
+                _inTrack = false;
+                var retryUrl = _lastUrl;
+                RestartCore();
+                if (retryUrl != null)
+                {
+                    _pendingUrl = retryUrl;
+                    _pendingStop = false;
+                    _wake.Set();
+                }
+                return;
+            }
             _inTrack = false;
             Failed?.Invoke();
         }
     }
+
+    static bool IsPipeFailure(Exception ex)
+        => ex is IOException || ex.Message.IndexOf("pipe", StringComparison.OrdinalIgnoreCase) >= 0;
 
     void RestartCore()
     {

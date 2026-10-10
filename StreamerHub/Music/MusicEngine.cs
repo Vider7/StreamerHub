@@ -436,12 +436,49 @@ public async Task<string?> ResolveAudioUrlAsync(string id)
         EndCurrent();
     }
 
+// Consecutive load failures. A single hiccup should move on to the next
+    // song, but when the player itself is broken every track fails the same
+    // way, and skipping straight through the queue turns one fault into a
+    // flood. After a few in a row, wait instead.
+    const int FailStreakLimit = 3;
+    static readonly TimeSpan FailStreakPause = TimeSpan.FromSeconds(8);
+    int _failStreak;
+    DateTime _failResumeAt = DateTime.MinValue;
+
     public void OnClientFailed()
     {
         if (NowPlaying == null) return;
         var t = NowPlaying;
+        _failStreak++;
+        if (_failStreak >= FailStreakLimit)
+        {
+            _failStreak = 0;
+            _failResumeAt = DateTime.UtcNow.Add(FailStreakPause);
+            EndCurrent();
+            Log.Warn("music: " + FailStreakLimit + " tracks failed in a row; pausing " +
+                (int)FailStreakPause.TotalSeconds + "s before trying again");
+            Notice?.Invoke("several songs would not load - pausing briefly");
+            StateChanged?.Invoke();
+            _ = ResumeAfterFailuresAsync();
+            return;
+        }
         EndCurrent();
         Notice?.Invoke("could not load, moving on: " + t.Title);
+    }
+
+    async Task ResumeAfterFailuresAsync()
+    {
+        try
+        {
+            var wait = _failResumeAt - DateTime.UtcNow;
+            if (wait > TimeSpan.Zero) await Task.Delay(wait);
+            Log.Info("music: retrying after the load-failure pause");
+            StartRadioFill();
+        }
+        catch (Exception ex)
+        {
+            Log.Warn("music: could not resume after failures: " + ex.Message);
+        }
     }
 
     void EndCurrent()
