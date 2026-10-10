@@ -13,6 +13,8 @@ public sealed class MusicEngine
     readonly List<Track> _blocked = new();
     readonly List<Track> _redo = new();
     int _generation;
+    DateTime _lastStartUtc = DateTime.MinValue;
+    bool _delayedStartPending;
     bool _radioBusy;
     bool _radioQueued;
     string? _radioEarlyFor;
@@ -316,23 +318,65 @@ public async Task<string?> ResolveAudioUrlAsync(string id)
    public async Task<string?> ResolveAudioUrlViaYtDlpAsync(string id)
    => await _resolver.ResolveViaYtDlpForcedAsync(id);
 
-    void BeginOrNext()
+void BeginOrNext()
     {
-        bool shouldStart;
+        Track? next;
+        var delay = TimeSpan.Zero;
         lock (_queue)
         {
-            shouldStart = NowPlaying == null && _queue.Count > 0;
-        }
-        if (shouldStart)
-        {
-            Track next;
-            lock (_queue)
+            if (NowPlaying != null || _queue.Count == 0) return;
+            // Breathing room between any two songs starting back to back.
+            // This used to be enforced when a request was accepted, which
+            // meant a second viewer asking at the same time was refused
+            // outright. Spacing playback instead loses nobody's request.
             {
-                next = _queue[0];
-                _queue.RemoveAt(0);
+                var since = (DateTime.UtcNow - _lastStartUtc).TotalSeconds;
+                if (_cfg.GlobalCooldownSeconds > 0 && since < _cfg.GlobalCooldownSeconds - 0.2)
+                    delay = TimeSpan.FromSeconds(_cfg.GlobalCooldownSeconds - since);
             }
-            SetNowPlaying(next);
+            next = _queue[0];
+            if (delay <= TimeSpan.Zero) _queue.RemoveAt(0);
         }
+        if (delay > TimeSpan.Zero)
+        {
+            ScheduleStart(next, delay);
+            return;
+        }
+        _lastStartUtc = DateTime.UtcNow;
+        SetNowPlaying(next);
+    }
+
+    // Delays a queued track so the gap between songs is respected. The track
+    // stays at the head of the queue so skip/duration ordering still works.
+    void ScheduleStart(Track next, TimeSpan delay)
+    {
+        lock (_queue)
+        {
+            if (_delayedStartPending) return;
+            _delayedStartPending = true;
+        }
+        Notice?.Invoke("next song in " + ((int)delay.TotalSeconds) + "s");
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(delay);
+                lock (_queue)
+                {
+                    _delayedStartPending = false;
+                    if (NowPlaying != null || _queue.Count == 0) return;
+                    if (_queue[0].Result.Id != next.Result.Id) return;
+                    _queue.RemoveAt(0);
+                }
+                _lastStartUtc = DateTime.UtcNow;
+                SetNowPlaying(next);
+            }
+            catch (Exception ex)
+            {
+                lock (_queue) _delayedStartPending = false;
+                Log.Warn("delayed start failed: " + ex.Message);
+            }
+        });
     }
 
     public void SetPosition(string id, double seconds, bool playing)
@@ -351,6 +395,9 @@ public async Task<string?> ResolveAudioUrlAsync(string id)
         NowPlaying = track;
         Position = 0;
         Playing = true;
+        // Set here as well as in BeginOrNext so a resumed track counts as a
+        // start, and the gap still applies to whatever plays after it.
+        _lastStartUtc = DateTime.UtcNow;
         _generation++;
         _radioEarlyFor = null;
         _cfg.LastPlayed = ToLastPlayed(track, 0, true);

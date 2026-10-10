@@ -373,7 +373,6 @@ public sealed class MpvPlayer : IDisposable
 
     public void Resume(string? streamUrl, double position, bool playing, string? afForTrack = null)
     {
-        Log.Info("resume called pos=" + position.ToString("0.0") + " available=" + _available + " url=" + (streamUrl ?? "null"));
         if (!_available) return;
         _lastUrl = string.IsNullOrEmpty(streamUrl) ? null : streamUrl;
         if (!string.IsNullOrEmpty(afForTrack)) _pendingTrackAf = afForTrack;
@@ -446,11 +445,10 @@ public sealed class MpvPlayer : IDisposable
                          // new file shows progress; suppresses counting the
                          // replaced file's stop event as a failure
     string? _pendingResumeSeek;
-    int _seekTries;
+    int _scrubTries;
     DateTime _lastAdvanceUtc = DateTime.UtcNow;
     int _pipeFailures;
     bool _pipeWarned;
-    bool _resumeSeekWarned;
     string? _resumeVerify;
     double? _pendingSeekAfterLoad;
 
@@ -461,7 +459,6 @@ public sealed class MpvPlayer : IDisposable
         _pendingUrl = null;
         _pendingSeekAfterLoad = null;
         _pendingResumeSeek = null;
-        _seekTries = 0;
         _pendingSeekTo = null;
         try { Command("stop"); } catch { }
     }
@@ -711,8 +708,11 @@ public sealed class MpvPlayer : IDisposable
                     _pendingSeekTo = null;
                     if (Duration > 0)
                     {
+                        // A manual scrub. Retry the seek and say so if it
+                        // never lands, so the dashboard can explain why the
+                        // song did not move (usually still downloading).
                         _pendingResumeSeek = seekStr;
-                        _seekTries = 0;
+                        _scrubTries = 0;
                     }
                     else
                     {
@@ -792,7 +792,6 @@ public sealed class MpvPlayer : IDisposable
                     {
                         _pendingSeekAfterLoad = null;
                         _pendingResumeSeek = ps.ToString("0.###", CultureInfo.InvariantCulture);
-                        _seekTries = 0;
                     }
                     if (_expectingStop && !Paused && DateTime.UtcNow - _loadedAtUtc > TimeSpan.FromSeconds(10)
                         && Duration <= 0 && Position <= 0)
@@ -853,7 +852,31 @@ public sealed class MpvPlayer : IDisposable
                     var pauseChanged = Paused != _prevPause;
                     _prevPause = Paused;
                     if (Math.Abs(Position - lastPos) > 1e-6 || pauseChanged) PositionChanged?.Invoke();
-                    _pendingResumeSeek = null;
+                    // Manual scrub in flight: keep retrying, then tell the
+                    // dashboard it could not jump rather than sitting dead.
+                    if (_pendingResumeSeek is { } sr)
+                    {
+                        _scrubTries++;
+                        try
+                        {
+                            Command("set_property", "time-pos", sr);
+                            var tp = Command("get_property", "time-pos");
+                            if (tp is JsonElement te && te.ValueKind == JsonValueKind.Number
+                                && Math.Abs(te.GetDouble() - double.Parse(sr, CultureInfo.InvariantCulture)) < 10.0)
+                            {
+                                _pendingResumeSeek = null;
+                                _scrubTries = 0;
+                            }
+                        }
+                        catch { }
+                        if (_scrubTries >= 20)
+                        {
+                            Log.Warn("seek to " + sr + " never took");
+                            _pendingResumeSeek = null;
+                            _scrubTries = 0;
+                            try { SeekFailed?.Invoke(); } catch { }
+                        }
+                    }
                 }
                 // A resume seek needs to run even while the track is not yet
                 // Confirm a resume actually landed. The load-time "start"
@@ -942,7 +965,6 @@ public sealed class MpvPlayer : IDisposable
             _lastAdvanceUtc = DateTime.UtcNow;
             _pendingSeekAfterLoad = null;
             _pendingResumeSeek = null;
-            _seekTries = 0;
             _pendingSeekTo = null;
             Duration = 0;
             Position = 0;

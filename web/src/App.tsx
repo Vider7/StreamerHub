@@ -2160,9 +2160,9 @@ function SettingsModal({ account, app, logs, logError, send, theme, onTheme, acc
                   <p className="hint">how long one viewer waits between their own requests.</p>
                 </div>
                 <div className="formrow">
-                  <label className="field-label" htmlFor="st-cool">wait between requests (seconds)</label>
-                  <NumField id="st-cool" value={cooldown} onChange={setCooldown} min={0} max={300} />
-                  <p className="hint">breathing room between any two requests from chat.</p>
+<label className="field-label" htmlFor="st-cool">gap between songs (seconds)</label>
+              <NumField id="st-cool" value={cooldown} onChange={setCooldown} min={0} max={300} />
+                  <p className="hint">breathing room before the next song starts. requests are never dropped because of it - they still queue up.</p>
                 </div>
               </div>
 

@@ -194,9 +194,8 @@ public sealed class CommandEngine
             // same time used to mean the second was silently refused, which
             // is the opposite of fair. Requests queue instead and are worked
             // through a small pool, so the wait happens after they have been
-            // heard rather than by throwing their request away.
-            // (GlobalCooldownSeconds no longer gates anything; it is still in
-            // the config and the settings UI. See the note in README.)
+            // heard rather than by throwing their request away. The gap
+            // between songs is applied at playback in MusicEngine.
             if (_pending.Count >= MaxPending)
             {
                 Log.Info($"!sr queue full: {username} [{platform}]");
