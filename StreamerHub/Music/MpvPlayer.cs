@@ -373,6 +373,7 @@ public sealed class MpvPlayer : IDisposable
 
     public void Resume(string? streamUrl, double position, bool playing, string? afForTrack = null)
     {
+        Log.Info("resume called pos=" + position.ToString("0.0") + " available=" + _available + " url=" + (streamUrl ?? "null"));
         if (!_available) return;
         _lastUrl = string.IsNullOrEmpty(streamUrl) ? null : streamUrl;
         if (!string.IsNullOrEmpty(afForTrack)) _pendingTrackAf = afForTrack;
@@ -450,6 +451,7 @@ public sealed class MpvPlayer : IDisposable
     int _pipeFailures;
     bool _pipeWarned;
     bool _resumeSeekWarned;
+    string? _resumeVerify;
     double? _pendingSeekAfterLoad;
 
     void EnqueueStop()
@@ -851,54 +853,24 @@ public sealed class MpvPlayer : IDisposable
                     var pauseChanged = Paused != _prevPause;
                     _prevPause = Paused;
                     if (Math.Abs(Position - lastPos) > 1e-6 || pauseChanged) PositionChanged?.Invoke();
-                    if (_pendingResumeSeek is { } rs)
+                    _pendingResumeSeek = null;
+                }
+                // A resume seek needs to run even while the track is not yet
+                // Confirm a resume actually landed. The load-time "start"
+                // option is issued while the stream is still resolving and
+                // can be dropped, leaving the song at 0 with no complaint.
+                if (_resumeVerify != null && Duration > 0)
+                {
+                    var want = _resumeVerify;
+                    _resumeVerify = null;
+                    if (Position < double.Parse(want, CultureInfo.InvariantCulture) - 10.0)
                     {
-                        // Only seek once mpv actually has the file loaded.
-                        // Seeking before then throws "property unavailable",
-                        // which is why a resumed song kept starting from the
-                        // beginning even though the position was saved.
-                        if (Duration <= 0)
-                        {
-                            if (_seekTries < 40) _seekTries++;
-                            if (_seekTries >= 40)
-                            {
-                                _pendingResumeSeek = null;
-                                _seekTries = 0;
-                                Log.Warn("resume seek to " + rs + "s skipped: the file never reported a duration");
-                            }
-                        }
-                        else
-                        {
-                            _seekTries++;
-                            try
-                            {
-                                Command("set_property", "time-pos", rs);
-                                var tp = Command("get_property", "time-pos");
-                                if (tp is JsonElement te && te.ValueKind == JsonValueKind.Number
-                                    && te.GetDouble() >= double.Parse(rs, CultureInfo.InvariantCulture) - 5.0)
-                                {
-                                    _pendingResumeSeek = null;
-                                    _seekTries = 0;
-                                    _resumeSeekWarned = false;
-                                    Log.Info("resumed at " + te.GetDouble().ToString("0.0", CultureInfo.InvariantCulture) + "s");
-                                }
-                            }
-                            catch (Exception ex)
-                            {
-                                if (!_resumeSeekWarned)
-                                {
-                                    _resumeSeekWarned = true;
-                                    Log.Warn("resume seek to " + rs + "s failed: " + ex.Message);
-                                }
-                            }
-                            if (_seekTries >= 12)
-                            {
-                                Log.Warn("resume seek to " + rs + " never took; starting from the beginning");
-                                _pendingResumeSeek = null;
-                                _seekTries = 0;
-                                try { SeekFailed?.Invoke(); } catch { }
-                            }
-                        }
+                        Log.Warn("resume missed: wanted " + want + "s, mpv at " + Position.ToString("0.0") + "s, re-seeking");
+                        try { Command("set_property", "time-pos", want); } catch { }
+                    }
+                    else
+                    {
+                        Log.Info("resume confirmed at " + Position.ToString("0.0") + "s");
                     }
                 }
                 else if (Paused || Duration != 0)
@@ -939,7 +911,31 @@ public sealed class MpvPlayer : IDisposable
                     catch (Exception ex) { Log.Warn("af apply failed: " + ex.Message); }
                 }
             }
-            Command("loadfile", url, "replace");
+            // Hand the resume position to mpv at load time. Seeking afterwards never
+            // worked: holding pause meant mpv reported no duration, so the
+            // seek could not run, so it never unpaused. Setting "start"
+            // before the file loads is the reliable way to resume.
+            var startAt = _lastResume;
+            var resuming = !string.IsNullOrEmpty(startAt)
+                && double.TryParse(startAt, NumberStyles.Float, CultureInfo.InvariantCulture, out var startSecs)
+                && startSecs > 0;
+            if (resuming)
+            {
+                _lastResume = null;
+                _pendingResumeSeek = null;
+                // Per-file option. Setting the "start" property does not
+                // survive loadfile, so the seek was silently dropped and the
+                // song began at 0. The options argument is a string list.
+                Log.Info("resuming at " + startAt + "s");
+                Command("loadfile", url, "replace", "-1", "start=" + startAt);
+                // Confirm what mpv actually did: a load issued while the
+                // stream is still resolving can silently land at 0.
+                _resumeVerify = startAt;
+            }
+            else
+            {
+                Command("loadfile", url, "replace");
+            }
             _loadedAtUtc = DateTime.UtcNow;
             _expectingStop = true;
             _inTrack = true;
@@ -950,12 +946,10 @@ public sealed class MpvPlayer : IDisposable
             _pendingSeekTo = null;
             Duration = 0;
             Position = 0;
-            if (_lastResume is { } seekStr)
-            {
-                Command("set_property", "pause", true);
-                _pendingResumeSeek = seekStr;
-            }
-            Command("set_property", "pause", !_startPlaying);
+            // Only touch pause when not resuming: sending it straight after a
+            // "start=" loadfile races the seek and lands back at 0. The
+            // resumed load already starts unpaused.
+            if (!resuming) Command("set_property", "pause", !_startPlaying);
             HideMpvWindow();
             PositionChanged?.Invoke();
         }

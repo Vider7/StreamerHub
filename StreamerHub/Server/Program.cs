@@ -40,6 +40,9 @@ internal static class Program
     static string? _preloadFailKey; // pair to leave alone for a few seconds after a failed load
     static DateTime _lastSeekNoticeUtc = DateTime.MinValue;
     static string? _resolvingId;
+    // Id whose resume load is in flight, so a duplicate SyncMusic cannot
+    // restart it from 0 and throw the saved position away.
+    static string? _resumeLoadingId;
     static double _resumeSeek;
     static bool _resumePlaying = true;
     static DateTime _lastSnapshotUtc = DateTime.MinValue;
@@ -363,10 +366,17 @@ internal static class Program
             var resumePlay = _resumePlaying;
             _resumeSeek = 0;
             _resumePlaying = true;
-            try
+            // A resume load takes a moment (wait for a duration, then seek).
+            // Anything that re-triggers PlayResolved in that window would
+            // restart the track from 0 and discard the saved position, so
+            // only the first call for this id is allowed to start it.
+            if (_resumeLoadingId == id) return;
+            _resumeLoadingId = id;
+try
             {
-                if (active.CurrentId != id) return;
+                if (active.CurrentId != id) { _resumeLoadingId = null; return; }
                 var url = StreamUrl(id);
+                Log.Info("playresolved id=" + id + " resume=" + resume + " pos=" + resumePos.ToString("0.0") + " currentId=" + (active.CurrentId ?? "null"));
                 if (resume)
                 {
                     active.Resume(url, resumePos, resumePlay, af);
@@ -910,6 +920,7 @@ internal static class Program
         _ = AudioStream.PrewarmAsync(music, last.Id);
         _resumeSeek = last.Position;
         _resumePlaying = last.Playing;
+        Log.Info("resume requested at " + last.Position.ToString("0.0") + "s for " + last.Id);
         music.Resume(new TrackResult
         {
             Id = last.Id,
